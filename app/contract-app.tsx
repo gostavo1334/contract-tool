@@ -1,0 +1,1990 @@
+"use client";
+
+import React, { useState, useEffect, useRef } from "react";
+import {
+  Branch,
+  Agent,
+  ContractRecord,
+  Settings,
+  TagRef,
+  ContractFormPayload,
+  EQUIPMENT_PRICES,
+  detectBranchFromCode,
+  agentBranchCode,
+  directorBodyName,
+} from "@/lib/shared";
+import { composeKhmerAddress } from "@/lib/khmer";
+
+interface InitialData {
+  today: string;
+  branches: Branch[];
+  settings: Settings;
+  tag_reference: { new_template: TagRef[]; old_template: TagRef[] };
+  recent_contracts: ContractRecord[];
+  agents: Agent[];
+  agents_count: number;
+}
+
+export default function ContractApp({ initialData }: { initialData: InitialData }) {
+  const [activeTab, setActiveTab] = useState<string>("home");
+  const [templateType, setTemplateType] = useState<"NEW" | "OLD">("NEW");
+  const [contractLang, setContractLang] = useState<"kh" | "en">("kh");
+
+  // State caches
+  const [branches, setBranches] = useState<Branch[]>(initialData.branches || []);
+  const [agents, setAgents] = useState<Agent[]>(initialData.agents || []);
+  const [recentContracts, setRecentContracts] = useState<ContractRecord[]>(
+    initialData.recent_contracts || []
+  );
+  const [settings, setSettings] = useState<Settings>(initialData.settings);
+  const [today, setToday] = useState<string>(initialData.today || "");
+
+  // Status banner
+  const [statusMsg, setStatusMsg] = useState<{ text: string; isError: boolean } | null>(null);
+
+  // Form Fields
+  const [branchCode, setBranchCode] = useState<string>(branches[0]?.code || "MONA");
+  const [contractNo, setContractNo] = useState<string>(branches[0]?.next_contract_no || "MONA011");
+  const [contractDate, setContractDate] = useState<string>(initialData.today || "");
+  const [datePreview, setDatePreview] = useState<string>("");
+  const [digitStyle, setDigitStyle] = useState<"khmer" | "latin">("khmer");
+  const [agentId, setAgentId] = useState<number | null>(null);
+
+  // Party B
+  const [nameKh, setNameKh] = useState<string>("");
+  const [nameLatin, setNameLatin] = useState<string>("");
+  const [idNumber, setIdNumber] = useState<string>("");
+  const [phone, setPhone] = useState<string>("");
+  const [email, setEmail] = useState<string>("");
+
+  // Address
+  const [houseNo, setHouseNo] = useState<string>("");
+  const [street, setStreet] = useState<string>("");
+  const [village, setVillage] = useState<string>("");
+  const [commune, setCommune] = useState<string>("");
+  const [district, setDistrict] = useState<string>("");
+  const [province, setProvince] = useState<string>("");
+  const [addressFull, setAddressFull] = useState<string>("");
+
+  // Bank
+  const [bankName, setBankName] = useState<string>("eMoney");
+  const [bankAccountName, setBankAccountName] = useState<string>("");
+  const [bankAccountNo, setBankAccountNo] = useState<string>("");
+
+  // Equipment
+  const [eqPrinter, setEqPrinter] = useState<boolean>(false);
+  const [eqScale, setEqScale] = useState<boolean>(false);
+  const [eqBasket, setEqBasket] = useState<boolean>(false);
+
+  // Company (Old template)
+  const [companyName, setCompanyName] = useState<string>("");
+  const [companyLaw, setCompanyLaw] = useState<string>("");
+  const [companyRegNo, setCompanyRegNo] = useState<string>("");
+  const [companyRegDate, setCompanyRegDate] = useState<string>("");
+  const [companyTaxNo, setCompanyTaxNo] = useState<string>("");
+  const [companyAddress, setCompanyAddress] = useState<string>("");
+
+  // Popup & Search
+  const [popupOpen, setPopupOpen] = useState<boolean>(false);
+  const [popupFilter, setPopupFilter] = useState<string>("");
+  const [showAllPopupBranches, setShowAllPopupBranches] = useState<boolean>(false);
+  const [agentSearchQuery, setAgentSearchQuery] = useState<string>("");
+  const [searchedAgents, setSearchedAgents] = useState<Agent[]>(agents);
+
+  // Branches Admin Form
+  const [bCode, setBCode] = useState<string>("");
+  const [bProvKh, setBProvKh] = useState<string>("");
+  const [bDirKh, setBDirKh] = useState<string>("");
+  const [bDirLatin, setBDirLatin] = useState<string>("");
+  const [bFormat, setBFormat] = useState<"khmer" | "latin">("khmer");
+  const [bSeq, setBSeq] = useState<number>(1);
+
+  // Direct Agent Form
+  const [agEditId, setAgEditId] = useState<number | null>(null);
+  const [agBranch, setAgBranch] = useState<string>(branches[0]?.code || "MONA");
+  const [agCode, setAgCode] = useState<string>("");
+  const [agNameKh, setAgNameKh] = useState<string>("");
+  const [agNameLatin, setAgNameLatin] = useState<string>("");
+  const [agIdNo, setAgIdNo] = useState<string>("");
+  const [agPhone, setAgPhone] = useState<string>("");
+  const [agBankName, setAgBankName] = useState<string>("eMoney");
+  const [agBankNo, setAgBankNo] = useState<string>("");
+  const [agAddr, setAgAddr] = useState<string>("");
+  const [dbAgentSearch, setDbAgentSearch] = useState<string>("");
+
+  // Preview panel
+  const [previewData, setPreviewData] = useState<any>(null);
+  const [previewLoading, setPreviewLoading] = useState<boolean>(false);
+  const [generateLoading, setGenerateLoading] = useState<boolean>(false);
+
+  const latinManuallyEdited = useRef<boolean>(false);
+  const bankAccountManuallyEdited = useRef<boolean>(false);
+  const addressManuallyEdited = useRef<boolean>(false);
+
+  const showStatus = (text: string, isError = false) => {
+    setStatusMsg({ text, isError });
+    setTimeout(() => setStatusMsg(null), 7000);
+  };
+
+  const selectedBranchObj = branches.find((b) => b.code === branchCode) || branches[0];
+
+  // Auto-compose address full
+  const syncAddressFull = (overrideParts?: Partial<{
+    house_no: string;
+    street: string;
+    village: string;
+    commune: string;
+    district: string;
+    province: string;
+  }>) => {
+    addressManuallyEdited.current = false;
+    const comp = composeKhmerAddress({
+      house_no: overrideParts?.house_no !== undefined ? overrideParts.house_no : houseNo,
+      street: overrideParts?.street !== undefined ? overrideParts.street : street,
+      village: overrideParts?.village !== undefined ? overrideParts.village : village,
+      commune: overrideParts?.commune !== undefined ? overrideParts.commune : commune,
+      district: overrideParts?.district !== undefined ? overrideParts.district : district,
+      province: overrideParts?.province !== undefined ? overrideParts.province : province,
+    });
+    setAddressFull(comp);
+  };
+
+  const handleAddressPartChange = (
+    field: "houseNo" | "street" | "village" | "commune" | "district" | "province",
+    value: string
+  ) => {
+    let nextHouse = houseNo;
+    let nextStreet = street;
+    let nextVillage = village;
+    let nextCommune = commune;
+    let nextDistrict = district;
+    let nextProvince = province;
+
+    if (field === "houseNo") { setHouseNo(value); nextHouse = value; }
+    else if (field === "street") { setStreet(value); nextStreet = value; }
+    else if (field === "village") { setVillage(value); nextVillage = value; }
+    else if (field === "commune") { setCommune(value); nextCommune = value; }
+    else if (field === "district") { setDistrict(value); nextDistrict = value; }
+    else if (field === "province") { setProvince(value); nextProvince = value; }
+
+    syncAddressFull({
+      house_no: nextHouse,
+      street: nextStreet,
+      village: nextVillage,
+      commune: nextCommune,
+      district: nextDistrict,
+      province: nextProvince,
+    });
+  };
+
+  useEffect(() => {
+    if (!addressManuallyEdited.current) {
+      const comp = composeKhmerAddress({
+        house_no: houseNo,
+        street: street,
+        village: village,
+        commune: commune,
+        district: district,
+        province: province,
+      });
+      setAddressFull(comp);
+    }
+  }, [houseNo, street, village, commune, district, province]);
+
+  // Transliterate date preview
+  useEffect(() => {
+    if (!contractDate) return;
+    fetch(`/api/transliterate?date_str=${encodeURIComponent(contractDate)}&template_type=${templateType}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.date_info) setDatePreview(d.date_info.full_preview);
+      })
+      .catch(() => {});
+  }, [contractDate, templateType]);
+
+  const onKhmerNameChange = (val: string) => {
+    setNameKh(val);
+    fetch(`/api/transliterate?name_kh=${encodeURIComponent(val)}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (!latinManuallyEdited.current) {
+          setNameLatin(d.name_latin || "");
+          if (!bankAccountManuallyEdited.current) {
+            setBankAccountName(d.name_latin || "");
+          }
+        }
+      });
+  };
+
+  const onContractNoChange = (val: string) => {
+    setContractNo(val);
+    setPopupFilter(val);
+    const det = detectBranchFromCode(val, branches);
+    if (det && det !== branchCode && branches.some((b) => b.code === det)) {
+      setBranchCode(det);
+    }
+    if (templateType === "OLD") {
+      const exact = agents.find((ag) => ag.agent_code?.toUpperCase() === val.trim().toUpperCase());
+      if (exact) {
+        fillFormFromAgent(exact, false);
+      }
+    }
+  };
+
+  const onBranchChange = (code: string) => {
+    setBranchCode(code);
+    const b = branches.find((x) => x.code === code);
+    if (!b) return;
+
+    if (templateType === "OLD") {
+      const bAgents = agents.filter((ag) => agentBranchCode(ag, branches) === code);
+      if (bAgents.length > 0) {
+        fillFormFromAgent(bAgents[0], true);
+      } else {
+        setContractNo(b.next_contract_no || `${b.code}001`);
+      }
+    } else {
+      setContractNo(b.next_contract_no || `${b.code}001`);
+      if (!province || province !== b.province_kh) {
+        setProvince(b.province_kh);
+      }
+    }
+  };
+
+  const openContractFlow = (type: "NEW" | "OLD", lang?: "kh" | "en") => {
+    setTemplateType(type);
+    if (lang) setContractLang(lang);
+    setActiveTab("form");
+    setPreviewData(null);
+    setDigitStyle(type === "OLD" ? settings.old_digit_style : settings.new_digit_style);
+
+    if (type === "OLD") {
+      setEqPrinter(true);
+    } else {
+      setEqPrinter(false);
+    }
+    if (!contractDate) setContractDate(today);
+
+    const b = branches.find((x) => x.code === branchCode) || branches[0];
+    if (b) {
+      if (type === "NEW") {
+        setContractNo(b.next_contract_no || `${b.code}001`);
+      }
+    }
+  };
+
+  const fillFormFromAgent = (ag: Agent, closePopup = true) => {
+    latinManuallyEdited.current = true;
+    bankAccountManuallyEdited.current = true;
+    addressManuallyEdited.current = Boolean(ag.address_full);
+    setAgentId(ag.id || null);
+
+    const agCodeVal = (ag.agent_code || "").trim();
+    if (agCodeVal) setContractNo(agCodeVal);
+
+    const agBr = agentBranchCode(ag, branches);
+    if (agBr && branches.some((b) => b.code === agBr)) {
+      setBranchCode(agBr);
+    }
+
+    setNameKh(ag.name_kh || "");
+    setNameLatin(ag.name_latin || "");
+    setIdNumber(ag.id_number || "");
+    setPhone(ag.phone || "");
+    setEmail(ag.email || "");
+    setHouseNo(ag.house_no || "");
+    setStreet(ag.street || "");
+    setVillage(ag.village || "");
+    setCommune(ag.commune || "");
+    setDistrict(ag.district || "");
+    setProvince(ag.province || "");
+    setAddressFull(ag.address_full || "");
+    setBankName(ag.bank_name || "eMoney");
+    setBankAccountName(ag.bank_account_name || ag.name_latin || "");
+    setBankAccountNo(ag.bank_account_no || "");
+    setCompanyName(ag.company_name || "");
+    setCompanyLaw(ag.company_law || "");
+    setCompanyRegNo(ag.company_reg_no || "");
+    setCompanyRegDate(ag.company_reg_date || "");
+    setCompanyTaxNo(ag.company_tax_no || "");
+    setCompanyAddress(ag.company_address || "");
+
+    if (closePopup) setPopupOpen(false);
+    showStatus(`បានទាញយកព័ត៌មានភ្នាក់ងារ «${ag.name_kh}» (កូដភ្នាក់ងារ៖ ${agCodeVal || "-"}) រួចរាល់។`);
+  };
+
+  const resetForm = () => {
+    latinManuallyEdited.current = false;
+    bankAccountManuallyEdited.current = false;
+    addressManuallyEdited.current = false;
+    setAgentId(null);
+    setNameKh("");
+    setNameLatin("");
+    setIdNumber("");
+    setPhone("");
+    setEmail("");
+    setHouseNo("");
+    setStreet("");
+    setVillage("");
+    setCommune("");
+    setDistrict("");
+    setProvince("");
+    setAddressFull("");
+    setBankName("eMoney");
+    setBankAccountName("");
+    setBankAccountNo("");
+    setCompanyName("");
+    setCompanyLaw("");
+    setCompanyRegNo("");
+    setCompanyRegDate("");
+    setCompanyTaxNo("");
+    setCompanyAddress("");
+    setEqPrinter(templateType === "OLD");
+    setEqScale(false);
+    setEqBasket(false);
+
+    const b = branches.find((x) => x.code === branchCode) || branches[0];
+    if (b) {
+      setContractNo(b.next_contract_no || `${b.code}001`);
+    }
+  };
+
+  const loadSamplePreset = (type: "NEW" | "OLD") => {
+    openContractFlow(type);
+    addressManuallyEdited.current = false;
+    if (type === "NEW") {
+      setBranchCode("MONA");
+      setContractDate("19/10/2026");
+      setContractNo("MONA011");
+      setNameKh("ប៉ា ចំរើន");
+      setNameLatin("Pa Chamroun");
+      setIdNumber("230067812");
+      setPhone("060363691");
+      setStreet("៧៦");
+      setVillage("ពូហ្យាម");
+      setCommune("សែនមនោរម្យ");
+      setDistrict("អូរាំង");
+      setProvince("មណ្ឌលគិរី");
+      setAddressFull("ផ្លូវ៧៦ ភូមិពូហ្យាម ឃុំ សែនមនោរម្យ ស្រុកអូរាំង ខេត្តមណ្ឌលគិរី");
+      setBankName("eMoney");
+      setBankAccountName("Pa Chamroun");
+      setBankAccountNo("060363691");
+      setEqPrinter(true);
+      setEqScale(true);
+      setEqBasket(false);
+    } else {
+      setBranchCode("PNPA");
+      setContractDate("01/05/2026");
+      setContractNo("PNPA010");
+      setNameKh("ស៊ីម វិចិត្រ");
+      setNameLatin("Sim Vichet");
+      setIdNumber("110512075(01)");
+      setPhone("0978850091");
+      setEmail("skan1711@gmail.com");
+      setHouseNo("12");
+      setStreet("123");
+      setVillage("ព្រៃឈើទាល");
+      setCommune("អង្គរជ័យ");
+      setDistrict("អង្គរជ័យ");
+      setProvince("កំពត");
+      setAddressFull("ផ្ទះលេខ12 ផ្លូវ 123 ភូមិ​ព្រៃឈើទាល ឃុំ​អង្គរជ័យ ស្រុក​អង្គរជ័យ ខេត្ត​កំពត");
+      setBankName("eMoney");
+      setBankAccountName("Sim Vichet");
+      setBankAccountNo("855978850091");
+      setEqPrinter(true);
+      setEqScale(true);
+      setEqBasket(false);
+    }
+  };
+
+  const collectPayload = (): ContractFormPayload => {
+    return {
+      template_type: templateType,
+      lang: contractLang,
+      branch_code: branchCode,
+      contract_no: contractNo,
+      agent_code: contractNo,
+      contract_date: contractDate,
+      digit_style: digitStyle,
+      agent_id: agentId,
+      name_kh: nameKh,
+      name_latin: nameLatin,
+      id_number: idNumber,
+      phone: phone,
+      email: email,
+      house_no: houseNo,
+      street: street,
+      village: village,
+      commune: commune,
+      district: district,
+      province: province,
+      address_full: addressFull,
+      bank_name: bankName,
+      bank_account_name: bankAccountName,
+      bank_account_no: bankAccountNo,
+      eq_printer: eqPrinter,
+      eq_scale: eqScale,
+      eq_basket: eqBasket,
+      company_name: companyName,
+      company_law: companyLaw,
+      company_reg_no: companyRegNo,
+      company_reg_date: companyRegDate,
+      company_tax_no: companyTaxNo,
+      company_address: companyAddress,
+    };
+  };
+
+  const handlePreview = async () => {
+    setPreviewLoading(true);
+    try {
+      const payload = collectPayload();
+      const res = await fetch("/api/contracts/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showStatus(data.detail || "មានបញ្ហាក្នុងការមើលឡើងវិញ", true);
+        return;
+      }
+      setPreviewData(data);
+    } catch (err: any) {
+      showStatus("កំហុស៖ " + err.message, true);
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const handleGenerate = async (format: "docx" | "pdf") => {
+    setGenerateLoading(true);
+    try {
+      const payload = collectPayload();
+      const res = await fetch("/api/contracts/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showStatus(data.detail || "មិនអាចបង្កើតកិច្ចសន្យាបានទេ", true);
+        return;
+      }
+      if (data.branches) setBranches(data.branches);
+      if (data.agent) {
+        setAgents((prev) => [data.agent, ...prev.filter((a) => a.id !== data.agent.id)]);
+      }
+      if (data.contract) {
+        setRecentContracts((prev) => [data.contract, ...prev]);
+      }
+      showStatus(`បានបង្កើតកិច្ចសន្យាលេខ ${data.contract?.contract_no} និងរក្សាទុកភ្នាក់ងារ «${data.agent?.name_kh}» ដោយជោគជ័យ!`);
+
+      // Trigger automatic download
+      if (format === "docx" && data.docx_base64) {
+        const a = document.createElement("a");
+        a.href = data.docx_base64;
+        a.download = data.docx_filename || "contract.docx";
+        a.click();
+      } else if (format === "pdf" && data.pdf_base64) {
+        const a = document.createElement("a");
+        a.href = data.pdf_base64;
+        a.download = data.pdf_filename || "contract.pdf";
+        a.click();
+      } else if (format === "pdf" && !data.pdf_base64) {
+        // Fallback: download docx if PDF converter not configured
+        showStatus("ប្រព័ន្ធបានបង្កើតឯកសារ .docx រួចរាល់ (PDF converter មិនទាន់ភ្ជាប់)", false);
+        const a = document.createElement("a");
+        a.href = data.docx_base64;
+        a.download = data.docx_filename || "contract.docx";
+        a.click();
+      }
+    } catch (err: any) {
+      showStatus("កំហុស៖ " + err.message, true);
+    } finally {
+      setGenerateLoading(false);
+    }
+  };
+
+  // Live filter for old agents search
+  const handleLiveSearch = (q: string) => {
+    setAgentSearchQuery(q);
+    const low = q.toLowerCase();
+    const filtered = agents.filter(
+      (ag) =>
+        (ag.agent_code || "").toLowerCase().includes(low) ||
+        (ag.name_kh || "").toLowerCase().includes(low) ||
+        (ag.name_latin || "").toLowerCase().includes(low) ||
+        (ag.phone || "").toLowerCase().includes(low) ||
+        (ag.id_number || "").toLowerCase().includes(low)
+    );
+    setSearchedAgents(filtered);
+  };
+
+  // Save Branch Admin
+  const handleSaveBranch = async () => {
+    if (!bCode || !bProvKh || !bDirLatin) {
+      showStatus("សូមបំពេញព័ត៌មានចាំបាច់សម្រាប់សាខា", true);
+      return;
+    }
+    const res = await fetch("/api/branches", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        code: bCode,
+        province_kh: bProvKh,
+        director_kh: bDirKh,
+        director_latin: bDirLatin,
+        body_name_format: bFormat,
+        next_seq: bSeq,
+      }),
+    });
+    if (res.ok) {
+      const saved = await res.json();
+      setBranches((prev) => [...prev.filter((b) => b.code !== saved.code), saved]);
+      setBCode("");
+      setBProvKh("");
+      setBDirKh("");
+      setBDirLatin("");
+      showStatus("បានរក្សាទុកព័ត៌មានសាខាដោយជោគជ័យ!");
+    } else {
+      const err = await res.json();
+      showStatus(err.detail || "កំហុសក្នុងការរក្សាទុកសាខា", true);
+    }
+  };
+
+  // Save Agent Direct
+  const handleSaveAgentDirect = async () => {
+    if (!agNameKh || !agIdNo || !agPhone) {
+      showStatus("សូមបំពេញឈ្មោះ អត្តសញ្ញាណប័ណ្ណ និងទូរស័ព្ទ", true);
+      return;
+    }
+    const res = await fetch("/api/agents", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: agEditId,
+        branch_code: agBranch,
+        agent_code: agCode,
+        name_kh: agNameKh,
+        name_latin: agNameLatin,
+        id_number: agIdNo,
+        phone: agPhone,
+        bank_name: agBankName,
+        bank_account_no: agBankNo,
+        address_full: agAddr,
+      }),
+    });
+    if (res.ok) {
+      const d = await res.json();
+      setAgents(d.agents);
+      setAgEditId(null);
+      setAgCode("");
+      setAgNameKh("");
+      setAgNameLatin("");
+      setAgIdNo("");
+      setAgPhone("");
+      setAgBankNo("");
+      setAgAddr("");
+      showStatus("បានរក្សាទុកភ្នាក់ងារដោយជោគជ័យ!");
+    } else {
+      const err = await res.json();
+      showStatus(err.detail || "កំហុសក្នុងការរក្សាទុកភ្នាក់ងារ", true);
+    }
+  };
+
+  const handleImportAgents = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append("file", file);
+    const res = await fetch("/api/agents/import", { method: "POST", body: fd });
+    if (res.ok) {
+      const d = await res.json();
+      setAgents(d.agents);
+      showStatus(`បាននាំចូលភ្នាក់ងារចំនួន ${d.imported} នាក់ដោយជោគជ័យ!`);
+    } else {
+      showStatus("កំហុសក្នុងការនាំចូល", true);
+    }
+  };
+
+  const handleSaveSettings = async () => {
+    const res = await fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(settings),
+    });
+    if (res.ok) {
+      showStatus("បានរក្សាទុកការកំណត់ទម្រង់លេខដោយជោគជ័យ!");
+    }
+  };
+
+  // Calculated equipment total
+  const eqTotal =
+    (eqPrinter ? EQUIPMENT_PRICES.printer : 0) +
+    (eqScale ? EQUIPMENT_PRICES.scale : 0) +
+    (eqBasket ? EQUIPMENT_PRICES.basket : 0);
+
+  // Popup agent filter
+  const activeBranch = branchCode.toUpperCase();
+  const popupAgents = showAllPopupBranches
+    ? agents
+    : agents.filter((ag) => agentBranchCode(ag, branches) === activeBranch);
+  const filteredPopupAgents = popupAgents.filter(
+    (ag) =>
+      (ag.agent_code || "").toLowerCase().includes(popupFilter.toLowerCase()) ||
+      (ag.name_kh || "").toLowerCase().includes(popupFilter.toLowerCase()) ||
+      (ag.name_latin || "").toLowerCase().includes(popupFilter.toLowerCase()) ||
+      (ag.phone || "").toLowerCase().includes(popupFilter.toLowerCase())
+  );
+
+  return (
+    <>
+      <header>
+        <div className="header-inner">
+          <div>
+            <h1 className="brand-title">ប្រព័ន្ធបំពេញកិច្ចសន្យាភ្នាក់ងារ មិត្តហ្វូន អ៊ិចប្រេស</h1>
+            <div className="brand-sub">
+              Metfone Express Agent Contract Filler — Next.js &amp; Supabase (Server Rendered)
+            </div>
+          </div>
+          <div className="nav-tabs">
+            <button
+              className={`nav-btn ${activeTab === "home" ? "active" : ""}`}
+              onClick={() => setActiveTab("home")}
+            >
+              ទំព័រដើម
+            </button>
+            <button
+              className={`nav-btn ${activeTab === "form" && templateType === "NEW" ? "active" : ""}`}
+              onClick={() => openContractFlow("NEW")}
+            >
+              ភ្នាក់ងារថ្មី (New)
+            </button>
+            <button
+              className={`nav-btn ${activeTab === "form" && templateType === "OLD" ? "active" : ""}`}
+              onClick={() => openContractFlow("OLD")}
+            >
+              ភ្នាក់ងារចាស់ (Old)
+            </button>
+            <button
+              className={`nav-btn ${activeTab === "branches" ? "active" : ""}`}
+              onClick={() => setActiveTab("branches")}
+            >
+              សាខា (Branches)
+            </button>
+            <button
+              className={`nav-btn ${activeTab === "agents" ? "active" : ""}`}
+              onClick={() => setActiveTab("agents")}
+            >
+              ទិន្នន័យភ្នាក់ងារ
+            </button>
+            <button
+              className={`nav-btn ${activeTab === "history" ? "active" : ""}`}
+              onClick={() => setActiveTab("history")}
+            >
+              ប្រវត្តិកិច្ចសន្យា
+            </button>
+            <button
+              className={`nav-btn ${activeTab === "settings" ? "active" : ""}`}
+              onClick={() => setActiveTab("settings")}
+            >
+              ការកំណត់ &amp; Tags
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <div className="container">
+        {statusMsg && (
+          <div className={`alert ${statusMsg.isError ? "alert-error" : "alert-success"}`}>
+            {statusMsg.text}
+          </div>
+        )}
+
+        {/* 1. HOME SCREEN */}
+        {activeTab === "home" && (
+          <div className="card home-hero">
+            <h2>សូមជ្រើសរើសប្រភេទកិច្ចសន្យាភ្នាក់ងារ</h2>
+            <p style={{ color: "var(--muted)", maxWidth: 640, margin: "0 auto" }}>
+              បង្កើតកិច្ចសន្យាភ្នាក់ងារថ្មី ឬ ស្វែងរកទិន្នន័យភ្នាក់ងារចាស់ដើម្បីបោះពុម្ភកិច្ចសន្យាឡើងវិញ ជាទម្រង់ Word (.docx) និង PDF ដោយស្វ័យប្រវត្តិ។
+            </p>
+            <div className="home-actions">
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
+                <button className="big-flow-btn" style={{ width: "100%" }} onClick={() => openContractFlow("NEW", "kh")}>
+                  <div className="kh-label">បង្កើតកិច្ចសន្យាភ្នាក់ងារថ្មី (ខ្មែរ)</div>
+                  <div className="en-label">New Agent Contract — Khmer (New_Agreement_with_Agent_-_KH.docx)</div>
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  style={{ alignSelf: "center", border: "1px solid #E2424A", color: "#E2424A", padding: "6px 14px", fontWeight: 600 }}
+                  onClick={() => openContractFlow("NEW", "en")}
+                >
+                  English Version (New Agreement with Agent - EN)
+                </button>
+              </div>
+
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
+                <button className="big-flow-btn old-flow" style={{ width: "100%" }} onClick={() => openContractFlow("OLD", "kh")}>
+                  <div className="kh-label">បោះពុម្ភកិច្ចសន្យាភ្នាក់ងារចាស់ (ខ្មែរ)</div>
+                  <div className="en-label">Old Agent Contract — Khmer (old_km.docx)</div>
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  style={{ alignSelf: "center", border: "1px solid #E2424A", color: "#E2424A", padding: "6px 14px", fontWeight: 600 }}
+                  onClick={() => openContractFlow("OLD", "en")}
+                >
+                  English Version (old en)
+                </button>
+              </div>
+            </div>
+
+            <div style={{ marginTop: 28, display: "flex", justifyContent: "center", gap: 12, flexWrap: "wrap" }}>
+              <button className="btn btn-secondary btn-sm" onClick={() => loadSamplePreset("NEW")}>
+                សាកល្បងទិន្នន័យគំរូភ្នាក់ងារថ្មី (MONA011 - ប៉ា ចំរើន)
+              </button>
+              <button className="btn btn-secondary btn-sm" onClick={() => loadSamplePreset("OLD")}>
+                សាកល្បងទិន្នន័យគំរូភ្នាក់ងារចាស់ (PNPA010 - ស៊ីម វិចិត្រ)
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* 2. CONTRACT FORM */}
+        {activeTab === "form" && (
+          <div>
+            {templateType === "OLD" && (
+              <div className="card" style={{ borderLeft: "5px solid #E2424A", marginBottom: 20 }}>
+                <div className="section-title">
+                  <span>ស្វែងរកទិន្នន័យភ្នាក់ងារចាស់ (Search Existing Agent Database)</span>
+                  <span className="badge badge-old">Flow B — ទម្រង់ចាស់ (old_km.docx)</span>
+                </div>
+                <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+                  <input
+                    type="text"
+                    value={agentSearchQuery}
+                    placeholder="វាយបញ្ចូល កូដភ្នាក់ងារ (Agent Code), ឈ្មោះខ្មែរ, ឈ្មោះឡាតាំង, លេខទូរស័ព្ទ..."
+                    onChange={(e) => handleLiveSearch(e.target.value)}
+                  />
+                </div>
+                <div style={{ maxHeight: 220, overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: 8 }}>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>កូដភ្នាក់ងារ</th>
+                        <th>ឈ្មោះខ្មែរ</th>
+                        <th>ឈ្មោះឡាតាំង</th>
+                        <th>អត្តសញ្ញាណប័ណ្ណ</th>
+                        <th>ទូរស័ព្ទ</th>
+                        <th>ខេត្ត/អាសយដ្ឋាន</th>
+                        <th>សកម្មភាព</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {searchedAgents.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} style={{ textAlign: "center", color: "var(--muted)" }}>
+                            រកមិនឃើញភ្នាក់ងារទេ
+                          </td>
+                        </tr>
+                      ) : (
+                        searchedAgents.map((ag) => (
+                          <tr key={ag.id}>
+                            <td>
+                              <span className="badge badge-old">{ag.agent_code || "-"}</span>
+                            </td>
+                            <td>
+                              <strong>{ag.name_kh}</strong>
+                            </td>
+                            <td>{ag.name_latin}</td>
+                            <td>{ag.id_number}</td>
+                            <td>{ag.phone}</td>
+                            <td>{ag.address_full}</td>
+                            <td>
+                              <button
+                                className="btn btn-docx btn-sm"
+                                onClick={() => fillFormFromAgent(ag, true)}
+                              >
+                                ជ្រើសរើស
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            <div className="card">
+              <div className="section-title">
+                <span>
+                  {templateType === "NEW"
+                    ? contractLang === "en"
+                      ? "បង្កើតកិច្ចសន្យាភ្នាក់ងារថ្មី (New Agent Contract - EN)"
+                      : "បង្កើតកិច្ចសន្យាភ្នាក់ងារថ្មី (Create New Agent Contract)"
+                    : contractLang === "en"
+                      ? "បោះពុម្ភកិច្ចសន្យាភ្នាក់ងារចាស់ឡើងវិញ (Old Agent Contract - EN)"
+                      : "បោះពុម្ភកិច្ចសន្យាភ្នាក់ងារចាស់ឡើងវិញ (Reprint Old Agent Contract)"}
+                </span>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  {/* English / Khmer Template Toggle */}
+                  <div
+                    style={{
+                      display: "inline-flex",
+                      borderRadius: 6,
+                      border: "1px solid #E2424A",
+                      overflow: "hidden",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      style={{
+                        padding: "4px 12px",
+                        fontSize: "0.82rem",
+                        fontWeight: 700,
+                        border: "none",
+                        cursor: "pointer",
+                        background: contractLang === "kh" ? "#E2424A" : "#FFFFFF",
+                        color: contractLang === "kh" ? "#FFFFFF" : "#E2424A",
+                        transition: "background 0.2s, color 0.2s",
+                      }}
+                      onClick={() => setContractLang("kh")}
+                    >
+                      ទម្រង់ខ្មែរ (KH)
+                    </button>
+                    <button
+                      type="button"
+                      style={{
+                        padding: "4px 12px",
+                        fontSize: "0.82rem",
+                        fontWeight: 700,
+                        border: "none",
+                        cursor: "pointer",
+                        background: contractLang === "en" ? "#E2424A" : "#FFFFFF",
+                        color: contractLang === "en" ? "#FFFFFF" : "#E2424A",
+                        transition: "background 0.2s, color 0.2s",
+                      }}
+                      onClick={() => setContractLang("en")}
+                    >
+                      English Version (EN)
+                    </button>
+                  </div>
+
+                  <span className={`badge ${templateType === "NEW" ? "badge-new" : "badge-old"}`}>
+                    {templateType === "NEW"
+                      ? contractLang === "en"
+                        ? "NEW (EN)"
+                        : "NEW TEMPLATE"
+                      : contractLang === "en"
+                        ? "OLD (EN)"
+                        : "OLD TEMPLATE"}
+                  </span>
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={resetForm}>
+                    សម្អាតទម្រង់ (Reset)
+                  </button>
+                </div>
+              </div>
+
+              {/* Header: Branch, Contract No, Date */}
+              <div className="grid-3">
+                <div className="form-group">
+                  <label>
+                    ជ្រើសរើសសាខា (Branch) <span className="req">*</span>
+                  </label>
+                  <select value={branchCode} onChange={(e) => onBranchChange(e.target.value)}>
+                    {branches.map((b) => (
+                      <option key={b.code} value={b.code}>
+                        {b.code} — {b.province_kh} ({directorBodyName(b)})
+                      </option>
+                    ))}
+                  </select>
+                  <span className="hint">បំពេញឈ្មោះនាយកសាខា និងខេត្តដោយស្វ័យប្រវត្តិ</span>
+                </div>
+
+                <div className="form-group">
+                  <label>
+                    លេខកិច្ចសន្យា (Contract No. / កូដភ្នាក់ងារ Agent Code) <span className="req">*</span>
+                  </label>
+                  <div className="agent-code-wrapper">
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <input
+                        type="text"
+                        value={contractNo}
+                        placeholder="ឧ. MONA011 ឬ PNPA010"
+                        onFocus={() => {
+                          if (templateType === "OLD") setPopupOpen(true);
+                        }}
+                        onChange={(e) => onContractNoChange(e.target.value)}
+                      />
+                      {templateType === "OLD" && agents.length > 0 && (
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => setPopupOpen(!popupOpen)}
+                        >
+                          ▼
+                        </button>
+                      )}
+                    </div>
+
+                    {popupOpen && (
+                      <div className="agent-code-popup">
+                        <div
+                          style={{
+                            padding: "8px 12px",
+                            background: "#F3E8D2",
+                            borderBottom: "1px solid #e5d8be",
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            fontSize: "0.8rem",
+                            color: "#E2424A",
+                            fontWeight: 600,
+                          }}
+                        >
+                          <span>
+                            {showAllPopupBranches
+                              ? `គ្រប់សាខាទាំងអស់ (${filteredPopupAgents.length} ភ្នាក់ងារ)`
+                              : `សាខា ${branchCode} (${filteredPopupAgents.length} ភ្នាក់ងារ)`}
+                          </span>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            style={{ padding: "2px 8px", fontSize: "0.74rem" }}
+                            onClick={() => setShowAllPopupBranches(!showAllPopupBranches)}
+                          >
+                            {showAllPopupBranches ? `បង្ហាញតាមសាខា ${branchCode}` : "បង្ហាញគ្រប់សាខា"}
+                          </button>
+                        </div>
+                        {filteredPopupAgents.length === 0 ? (
+                          <div style={{ padding: "10px 12px", color: "#64748b", fontSize: "0.85rem" }}>
+                            មិនមានភ្នាក់ងារត្រូវនឹងទិន្នន័យនេះទេ
+                          </div>
+                        ) : (
+                          filteredPopupAgents.map((ag) => (
+                            <div
+                              key={ag.id}
+                              className="agent-code-option"
+                              onClick={() => fillFormFromAgent(ag, true)}
+                            >
+                              <div>
+                                <span className="badge badge-old" style={{ marginRight: 4 }}>
+                                  {ag.agent_code || "-"}
+                                </span>
+                                <strong>{ag.name_kh}</strong>{" "}
+                                <span style={{ color: "#475569" }}>({ag.name_latin || ""})</span>
+                                <div style={{ fontSize: "0.78rem", color: "#64748b" }}>
+                                  ទូរស័ព្ទ៖ {ag.phone || "-"} | ID៖ {ag.id_number || "-"}
+                                </div>
+                              </div>
+                              <span className="btn btn-docx btn-sm" style={{ padding: "3px 8px" }}>
+                                ជ្រើសរើស
+                              </span>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <span className="hint">ប្រើកូដភ្នាក់ងារ (Agent Code) ជាលេខកិច្ចសន្យា</span>
+                </div>
+
+                <div className="form-group">
+                  <label>
+                    កាលបរិច្ឆេទ (Date dd/mm/yyyy) <span className="req">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={contractDate}
+                    placeholder="dd/mm/yyyy"
+                    onChange={(e) => setContractDate(e.target.value)}
+                  />
+                  <span className="hint">{datePreview || "ថ្ងៃទី ... ខែ ... ឆ្នាំ ..."}</span>
+                </div>
+              </div>
+
+              {/* Party A Banner */}
+              <div className="party-a-banner">
+                <div>
+                  <strong>ភាគី “ក” (ក្នុងតួកិច្ចសន្យា)៖</strong> តំណាងដោយលោក{" "}
+                  <strong>{selectedBranchObj ? directorBodyName(selectedBranchObj) : "-"}</strong> | នាយកសាខា{" "}
+                  <strong>{selectedBranchObj?.province_kh || "-"}</strong>
+                </div>
+                <div>
+                  <strong>ហត្ថលេខាភាគី “ក” (២ កន្លែង)៖</strong> ឈ្មោះ៖{" "}
+                  <strong>{selectedBranchObj?.director_latin || "-"}</strong>
+                </div>
+                <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+                  <label style={{ fontSize: "0.84rem", fontWeight: 600 }}>ទម្រង់លេខ៖</label>
+                  <select
+                    value={digitStyle}
+                    style={{ width: "auto", padding: "4px 8px", fontSize: "0.84rem" }}
+                    onChange={(e) => setDigitStyle(e.target.value as any)}
+                  >
+                    <option value="khmer">លេខខ្មែរ (០១២៣៤៥៦៧៨៩)</option>
+                    <option value="latin">លេខឡាតាំង (0123456789)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Party B */}
+              <h3 className="section-title" style={{ marginTop: 24 }}>
+                ព័ត៌មាន ភាគី “ខ” (Party B — Agent Information)
+              </h3>
+              <div className="grid-2">
+                <div className="form-group">
+                  <label>
+                    ១. ឈ្មោះពេញ (អក្សរខ្មែរ) <span className="req">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={nameKh}
+                    placeholder="ឧ. ប៉ា ចំរើន"
+                    onChange={(e) => onKhmerNameChange(e.target.value)}
+                  />
+                  <span className="hint">បង្ហាញក្នុងតួកិច្ចសន្យា និងកន្លែងចុះហត្ថលេខាភាគី “ខ”</span>
+                </div>
+                <div className="form-group">
+                  <label>
+                    ២. ឈ្មោះពេញ (អក្សរឡាតាំង) <span className="req">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={nameLatin}
+                    placeholder="ឧ. Pa Chamroun"
+                    onChange={(e) => {
+                      latinManuallyEdited.current = true;
+                      setNameLatin(e.target.value);
+                      if (!bankAccountManuallyEdited.current) setBankAccountName(e.target.value);
+                    }}
+                  />
+                  <span className="hint">បង្កើតស្វ័យប្រវត្តិពីឈ្មោះខ្មែរ និងអាចកែប្រែបាន</span>
+                </div>
+              </div>
+
+              <div className="grid-3" style={{ marginTop: 14 }}>
+                <div className="form-group">
+                  <label>
+                    ៣. លេខអត្តសញ្ញាណប័ណ្ណ <span className="req">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={idNumber}
+                    placeholder="ឧ. 230067812"
+                    onChange={(e) => setIdNumber(e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>
+                    ៤. លេខទូរស័ព្ទ <span className="req">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={phone}
+                    placeholder="ឧ. 060363691"
+                    onChange={(e) => setPhone(e.target.value)}
+                  />
+                </div>
+                {templateType === "OLD" && (
+                  <div className="form-group">
+                    <label>អ៊ីម៉ែល (Email)</label>
+                    <input
+                      type="text"
+                      value={email}
+                      placeholder="ឧ. skan1711@gmail.com"
+                      onChange={(e) => setEmail(e.target.value)}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Address */}
+              <h3 className="section-title" style={{ marginTop: 24 }}>
+                ៥. អាសយដ្ឋាន (បំពេញម្តង ចម្លងទៅទាំងលំនៅឋាន និងចំណុចចុះបញ្ជី)
+              </h3>
+              <div className="grid-3">
+                <div className="form-group">
+                  <label>ផ្ទះលេខ</label>
+                  <input
+                    type="text"
+                    value={houseNo}
+                    placeholder="ឧ. 12"
+                    onChange={(e) => handleAddressPartChange("houseNo", e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>ផ្លូវ</label>
+                  <input
+                    type="text"
+                    value={street}
+                    placeholder="ឧ. ៧៦"
+                    onChange={(e) => handleAddressPartChange("street", e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>
+                    ភូមិ <span className="req">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={village}
+                    placeholder="ឧ. ពូហ្យាម"
+                    onChange={(e) => handleAddressPartChange("village", e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>
+                    ឃុំ / សង្កាត់ <span className="req">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={commune}
+                    placeholder="ឧ. សែនមនោរម្យ"
+                    onChange={(e) => handleAddressPartChange("commune", e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>
+                    ស្រុក / ក្រុង / ខណ្ឌ <span className="req">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={district}
+                    placeholder="ឧ. អូរាំង"
+                    onChange={(e) => handleAddressPartChange("district", e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>
+                    រាជធានី / ខេត្ត <span className="req">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={province}
+                    placeholder="ឧ. មណ្ឌលគិរី"
+                    onChange={(e) => handleAddressPartChange("province", e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="form-group" style={{ marginTop: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <label style={{ margin: 0 }}>
+                    អាសយដ្ឋានពេញលេញក្នុងកិច្ចសន្យា (អាចកែសម្រួលផ្ទាល់បាន) <span className="req">*</span>
+                  </label>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    style={{ padding: "3px 10px", fontSize: "0.8rem", cursor: "pointer" }}
+                    onClick={() => syncAddressFull()}
+                    title="បំពេញអាសយដ្ឋានពេញលេញឡើងវិញពីប្រអប់ទាំង ៦ ខាងលើ"
+                  >
+                    បំពេញស្វ័យប្រវត្តិ (Auto-fill)
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  value={addressFull}
+                  placeholder="ផ្លូវ... ភូមិ... ឃុំ... ស្រុក... ខេត្ត..."
+                  onChange={(e) => {
+                    addressManuallyEdited.current = true;
+                    setAddressFull(e.target.value);
+                  }}
+                />
+              </div>
+
+              {/* Bank Info */}
+              <h3 className="section-title" style={{ marginTop: 24 }}>
+                ៦. ព័ត៌មានធនាគារ (Bank Account Information)
+              </h3>
+              <div className="grid-3">
+                <div className="form-group">
+                  <label>
+                    ឈ្មោះធនាគារ (Bank Name) <span className="req">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={bankName}
+                    onChange={(e) => setBankName(e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>
+                    ឈ្មោះគណនីធនាគារ (អក្សរឡាតាំង) <span className="req">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={bankAccountName}
+                    placeholder="ឧ. Pa Chamroun"
+                    onChange={(e) => {
+                      bankAccountManuallyEdited.current = true;
+                      setBankAccountName(e.target.value);
+                    }}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>
+                    លេខគណនីធនាគារ <span className="req">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={bankAccountNo}
+                    placeholder="ឧ. 060363691"
+                    onChange={(e) => setBankAccountNo(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {/* Company Section for Old Template */}
+              {templateType === "OLD" && (
+                <details className="company-collapse">
+                  <summary>ព័ត៌មានក្រុមហ៊ុន (សម្រាប់ទម្រង់ចាស់ប៉ុណ្ណោះ — ទុកទទេដើម្បីរក្សាចំណុច ..... ដើម)</summary>
+                  <div className="grid-3" style={{ marginTop: 10 }}>
+                    <div className="form-group">
+                      <label>ឈ្មោះក្រុមហ៊ុន</label>
+                      <input
+                        type="text"
+                        value={companyName}
+                        placeholder="ទុកទទេ = ........................"
+                        onChange={(e) => setCompanyName(e.target.value)}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>បង្កើតក្រោមច្បាប់នៃ</label>
+                      <input
+                        type="text"
+                        value={companyLaw}
+                        placeholder="ទុកទទេ = ........................"
+                        onChange={(e) => setCompanyLaw(e.target.value)}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>លេខចុះបញ្ជីពាណិជ្ជកម្ម</label>
+                      <input
+                        type="text"
+                        value={companyRegNo}
+                        placeholder="ទុកទទេ = ........................"
+                        onChange={(e) => setCompanyRegNo(e.target.value)}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>ចុះថ្ងៃទី (ក្រសួងពាណិជ្ជកម្ម)</label>
+                      <input
+                        type="text"
+                        value={companyRegDate}
+                        placeholder="ទុកទទេ = ........................"
+                        onChange={(e) => setCompanyRegDate(e.target.value)}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>លេខពន្ធដារ</label>
+                      <input
+                        type="text"
+                        value={companyTaxNo}
+                        placeholder="ទុកទទេ = ........................"
+                        onChange={(e) => setCompanyTaxNo(e.target.value)}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>អាសយដ្ឋានចុះបញ្ជីក្រុមហ៊ុន</label>
+                      <input
+                        type="text"
+                        value={companyAddress}
+                        placeholder="ទុកទទេ = ........................"
+                        onChange={(e) => setCompanyAddress(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </details>
+              )}
+
+              {/* Deposit & Equipment */}
+              <h3 className="section-title" style={{ marginTop: 24 }}>
+                ៧. ប្រាក់កក់ធានា និង ឧបករណ៍ប្រើប្រាស់ (ឧបសម្ព័ន្ធ ០១)
+              </h3>
+              <div
+                style={{
+                  background: "#F3E8D2",
+                  border: "1px solid #e5d8be",
+                  padding: "10px 14px",
+                  borderRadius: 8,
+                  marginBottom: 14,
+                  fontSize: "0.9rem",
+                }}
+              >
+                <strong style={{ color: "#E2424A" }}>
+                  ប្រាក់កក់ថេរសម្រាប់ការធានា (ប្រការ ៣.៧)៖{" "}
+                  {templateType === "NEW" ? "USD ៥០ ($50)" : "USD 250 ($250)"}
+                </strong>{" "}
+                — ជាអត្ថបទថេរនៅក្នុងទម្រង់កិច្ចសន្យា
+              </div>
+
+              <label className={`eq-box ${eqPrinter ? "checked" : ""}`}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <input
+                    type="checkbox"
+                    checked={eqPrinter}
+                    disabled={templateType === "OLD"}
+                    onChange={(e) => setEqPrinter(e.target.checked)}
+                  />
+                  <div>
+                    <div style={{ fontWeight: 700 }}>
+                      ១. ម៉ាស៊ីនព្រីនបុង — Xprinter XP-DT427B thermal printer (WiFi)
+                    </div>
+                    <div className="hint">
+                      {templateType === "OLD"
+                        ? "ចាំបាច់ (Mandatory ក្នុងទម្រង់ចាស់ — រក្សាទុកពាក្យ «ចាំបាច់» ក្នុងតារាង)"
+                        : "គូសធីកក្នុងតារាងឧបសម្ព័ន្ធ ០១"}
+                    </div>
+                  </div>
+                </div>
+                <span className="price-badge">USD 150</span>
+              </label>
+
+              <label className={`eq-box ${eqScale ? "checked" : ""}`}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <input
+                    type="checkbox"
+                    checked={eqScale}
+                    onChange={(e) => setEqScale(e.target.checked)}
+                  />
+                  <div>
+                    <div style={{ fontWeight: 700 }}>២. ជញ្ជីង — 30 kg mechanical scale</div>
+                    <div className="hint">គូសធីកក្នុងតារាងឧបសម្ព័ន្ធ ០១</div>
+                  </div>
+                </div>
+                <span className="price-badge">USD 65</span>
+              </label>
+
+              <label className={`eq-box ${eqBasket ? "checked" : ""}`}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <input
+                    type="checkbox"
+                    checked={eqBasket}
+                    onChange={(e) => setEqBasket(e.target.checked)}
+                  />
+                  <div>
+                    <div style={{ fontWeight: 700 }}>
+                      ៣. កញ្ច្រែង — Delivery plastic basket (780*500*430)
+                    </div>
+                    <div className="hint">គូសធីកក្នុងតារាងឧបសម្ព័ន្ធ ០១</div>
+                  </div>
+                </div>
+                <span className="price-badge">USD 35</span>
+              </label>
+
+              <div className="total-bar">
+                <div>
+                  <div style={{ fontWeight: 700 }}>សរុបប្រាក់កក់ឧបករណ៍ដែលបានជ្រើសរើស៖</div>
+                  <div style={{ fontSize: "0.8rem", opacity: 0.9 }}>
+                    ចំនួនទឹកប្រាក់សរុបក្នុងតារាងឧបសម្ព័ន្ធ ០១ នឹងគណនាតាមចំនួនដែលបានជ្រើសរើសជាក់ស្តែង។
+                  </div>
+                </div>
+                <div className="amount">USD ${eqTotal}</div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="btn-row">
+                <button
+                  type="button"
+                  className="btn btn-preview"
+                  disabled={previewLoading}
+                  onClick={handlePreview}
+                >
+                  {previewLoading ? "កំពុងរៀបចំការមើលឡើងវិញ..." : "មើលឡើងវិញ (Preview)"}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-pdf"
+                  disabled={generateLoading}
+                  onClick={() => handleGenerate("pdf")}
+                >
+                  {generateLoading ? "កំពុងបង្កើត..." : "បោះពុម្ភ ជា pdf (Export & Print PDF)"}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-docx"
+                  disabled={generateLoading}
+                  onClick={() => handleGenerate("docx")}
+                >
+                  {generateLoading ? "កំពុងបង្កើត..." : "ទាញយក Word (.docx)"}
+                </button>
+              </div>
+            </div>
+
+            {/* Preview Output Panel */}
+            {previewData && (
+              <div className="card" style={{ marginTop: 20 }}>
+                <div className="section-title">
+                  <span>មើលឡើងវិញនូវកិច្ចសន្យាដែលបានបំពេញ (Preview)</span>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    {previewData.preview_docx_base64 && (
+                      <a
+                        href={previewData.preview_docx_base64}
+                        download={`PREVIEW_${contractNo}.docx`}
+                        className="btn btn-docx btn-sm"
+                      >
+                        ទាញយក .docx
+                      </a>
+                    )}
+                  </div>
+                </div>
+                <div
+                  style={{
+                    background: "#F3E8D2",
+                    border: "1px solid #e5d8be",
+                    borderRadius: 8,
+                    padding: 16,
+                    fontSize: "0.92rem",
+                  }}
+                >
+                  <div className="grid-2">
+                    <div>
+                      <strong>{contractLang === "en" ? "Contract No.:" : "លេខកិច្ចសន្យា៖"}</strong> {previewData.context.contract_no}
+                      <br />
+                      <strong>{contractLang === "en" ? "Effective Date:" : "កាលបរិច្ឆេទ៖"}</strong>{" "}
+                      {contractLang === "en"
+                        ? `${previewData.context.day}/${previewData.context.month}/${previewData.context.year}`
+                        : `ថ្ងៃទី ${previewData.context.day} ខែ ${previewData.context.month} ឆ្នាំ ${previewData.context.year}`}
+                      <br />
+                      <strong>{contractLang === "en" ? "Party A:" : "ភាគី ក (ក្នុងតួកិច្ចសន្យា)៖"}</strong>{" "}
+                      {contractLang === "en"
+                        ? `Represented by ${previewData.context.director_latin}, Branch Director of ${previewData.context.branch_province_en}`
+                        : `តំណាងដោយលោក ${previewData.context.director_body_name} នាយកសាខា ${previewData.context.branch_province_kh}`}
+                      <br />
+                      <strong>{contractLang === "en" ? "Party A Signature:" : "ហត្ថលេខាភាគី ក (២ កន្លែង)៖"}</strong> {previewData.context.director_latin}
+                    </div>
+                    <div>
+                      <strong>{contractLang === "en" ? "Party B Name:" : "ភាគី ខ (ឈ្មោះខ្មែរ / ឡាតាំង)៖"}</strong>{" "}
+                      {contractLang === "en"
+                        ? previewData.context.agent_name_latin || previewData.context.agent_name_kh
+                        : `${previewData.context.agent_name_kh} (${previewData.context.agent_name_latin})`}
+                      <br />
+                      <strong>{contractLang === "en" ? "ID / Phone:" : "អត្តសញ្ញាណប័ណ្ណ / ទូរស័ព្ទ៖"}</strong> {previewData.context.id_number} /{" "}
+                      {previewData.context.phone}
+                      <br />
+                      <strong>{contractLang === "en" ? "Address:" : "អាសយដ្ឋាន (ទាំង ២ កន្លែង)៖"}</strong> {previewData.context.address}
+                      <br />
+                      <strong>{contractLang === "en" ? "Bank Account:" : "គណនីធនាគារ៖"}</strong> {previewData.context.bank_account_name} —{" "}
+                      {previewData.context.bank_account_no} ({previewData.context.bank_name})<br />
+                      <strong>{contractLang === "en" ? "Appendix 01 Equipment:" : "ឧបករណ៍ឧបសម្ព័ន្ធ ០១៖"}</strong>{" "}
+                      {contractLang === "en" ? "Printer" : "ម៉ាស៊ីនព្រីន"} [
+                      {templateType === "OLD" ? (contractLang === "en" ? "Compulsory" : "ចាំបាច់") : previewData.context.eq_printer}] | {contractLang === "en" ? "Scale" : "ជញ្ជីង"} [
+                      {previewData.context.eq_scale}] | {contractLang === "en" ? "Basket" : "កញ្ច្រែង"} [{previewData.context.eq_basket}]
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 3. BRANCHES ADMIN VIEW */}
+        {activeTab === "branches" && (
+          <div className="card">
+            <div className="section-title">
+              <span>គ្រប់គ្រងតារាងសាខា (Branches Table — Admin)</span>
+              <span className="hint">រក្សាទុកក្នុង Supabase ដោយស្វ័យប្រវត្តិ</span>
+            </div>
+            <div
+              className="grid-3"
+              style={{
+                background: "#F3E8D2",
+                padding: 16,
+                borderRadius: 10,
+                border: "1px solid #e5d8be",
+                marginBottom: 20,
+              }}
+            >
+              <div className="form-group">
+                <label>
+                  កូដសាខា (Code) <span className="req">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={bCode}
+                  placeholder="ឧ. MONA, PNPA"
+                  onChange={(e) => setBCode(e.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label>
+                  ខេត្ត/រាជធានី (Province in Khmer) <span className="req">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={bProvKh}
+                  placeholder="ឧ. មណ្ឌលគិរី"
+                  onChange={(e) => setBProvKh(e.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label>ឈ្មោះនាយកសាខា (អក្សរខ្មែរ)</label>
+                <input
+                  type="text"
+                  value={bDirKh}
+                  placeholder="ឧ. លាង រដ្ឋា"
+                  onChange={(e) => setBDirKh(e.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label>
+                  ឈ្មោះនាយកសាខា (អក្សរឡាតាំង) <span className="req">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={bDirLatin}
+                  placeholder="ឧ. Leang Ratha"
+                  onChange={(e) => setBDirLatin(e.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label>ទម្រង់ឈ្មោះក្នុងតួកិច្ចសន្យា</label>
+                <select value={bFormat} onChange={(e) => setBFormat(e.target.value as any)}>
+                  <option value="khmer">khmer (បង្ហាញឈ្មោះខ្មែរក្នុងតួកិច្ចសន្យា)</option>
+                  <option value="latin">latin (បង្ហាញឈ្មោះឡាតាំងក្នុងតួកិច្ចសន្យា)</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label>លេខរៀងកិច្ចសន្យាបន្ទាប់ (next_seq)</label>
+                <input
+                  type="number"
+                  value={bSeq}
+                  min={1}
+                  onChange={(e) => setBSeq(parseInt(e.target.value, 10) || 1)}
+                />
+              </div>
+              <div style={{ gridColumn: "1 / -1", display: "flex", gap: 10 }}>
+                <button className="btn btn-preview btn-sm" onClick={handleSaveBranch}>
+                  រក្សាទុកសាខា (Save / Update Branch)
+                </button>
+              </div>
+            </div>
+
+            <table>
+              <thead>
+                <tr>
+                  <th>កូដ (code)</th>
+                  <th>ខេត្ត/រាជធានី (province_kh)</th>
+                  <th>នាយកសាខាខ្មែរ</th>
+                  <th>នាយកសាខាឡាតាំង</th>
+                  <th>body_name_format</th>
+                  <th>លេខកិច្ចសន្យាបន្ទាប់</th>
+                  <th>សកម្មភាព</th>
+                </tr>
+              </thead>
+              <tbody>
+                {branches.map((b) => (
+                  <tr key={b.code}>
+                    <td>
+                      <strong>{b.code}</strong>
+                    </td>
+                    <td>{b.province_kh}</td>
+                    <td>{b.director_kh || "(ទទេ)"}</td>
+                    <td>{b.director_latin}</td>
+                    <td>
+                      <span className={`badge ${b.body_name_format === "khmer" ? "badge-new" : "badge-old"}`}>
+                        {b.body_name_format}
+                      </span>
+                    </td>
+                    <td>
+                      <code>{b.next_contract_no}</code> (seq: {b.next_seq})
+                    </td>
+                    <td>
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => {
+                          setBCode(b.code);
+                          setBProvKh(b.province_kh);
+                          setBDirKh(b.director_kh || "");
+                          setBDirLatin(b.director_latin);
+                          setBFormat(b.body_name_format);
+                          setBSeq(b.next_seq);
+                        }}
+                      >
+                        កែប្រែ
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* 4. AGENTS DATABASE VIEW */}
+        {activeTab === "agents" && (
+          <div className="card">
+            <div className="section-title">
+              <span>ទិន្នន័យភ្នាក់ងារ និង ការនាំចូល (Agents Database)</span>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input
+                  type="file"
+                  accept=".xlsx,.csv"
+                  style={{ width: "auto", fontSize: "0.82rem" }}
+                  onChange={handleImportAgents}
+                />
+                <a href="/api/agents/export" className="btn btn-secondary btn-sm">
+                  នាំចេញ CSV
+                </a>
+              </div>
+            </div>
+
+            {/* Direct Add/Edit Agent Form */}
+            <div
+              className="grid-4"
+              style={{
+                background: "#F3E8D2",
+                padding: 16,
+                borderRadius: 10,
+                border: "1px solid #e5d8be",
+                marginBottom: 18,
+              }}
+            >
+              <div className="form-group">
+                <label>
+                  សាខា (Branch) <span className="req">*</span>
+                </label>
+                <select value={agBranch} onChange={(e) => setAgBranch(e.target.value)}>
+                  {branches.map((b) => (
+                    <option key={b.code} value={b.code}>
+                      {b.code} — {b.province_kh}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-group">
+                <label>
+                  កូដភ្នាក់ងារ (Agent Code) <span className="req">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={agCode}
+                  placeholder="ឧ. MONA011"
+                  onChange={(e) => setAgCode(e.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label>
+                  ឈ្មោះខ្មែរ <span className="req">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={agNameKh}
+                  placeholder="ឧ. ប៉ា ចំរើន"
+                  onChange={(e) => setAgNameKh(e.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label>ឈ្មោះឡាតាំង</label>
+                <input
+                  type="text"
+                  value={agNameLatin}
+                  placeholder="ឧ. Pa Chamroun"
+                  onChange={(e) => setAgNameLatin(e.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label>
+                  អត្តសញ្ញាណប័ណ្ណ <span className="req">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={agIdNo}
+                  placeholder="ឧ. 230067812"
+                  onChange={(e) => setAgIdNo(e.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label>
+                  ទូរស័ព្ទ <span className="req">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={agPhone}
+                  placeholder="ឧ. 060363691"
+                  onChange={(e) => setAgPhone(e.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label>ធនាគារ</label>
+                <input
+                  type="text"
+                  value={agBankName}
+                  onChange={(e) => setAgBankName(e.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label>លេខគណនីធនាគារ</label>
+                <input
+                  type="text"
+                  value={agBankNo}
+                  placeholder="ឧ. 060363691"
+                  onChange={(e) => setAgBankNo(e.target.value)}
+                />
+              </div>
+              <div className="form-group" style={{ gridColumn: "span 2" }}>
+                <label>អាសយដ្ឋានពេញលេញ</label>
+                <input
+                  type="text"
+                  value={agAddr}
+                  placeholder="ផ្លូវ... ភូមិ... ឃុំ... ស្រុក... ខេត្ត..."
+                  onChange={(e) => setAgAddr(e.target.value)}
+                />
+              </div>
+              <div style={{ gridColumn: "1 / -1", display: "flex", gap: 10 }}>
+                <button className="btn btn-preview btn-sm" onClick={handleSaveAgentDirect}>
+                  រក្សាទុកភ្នាក់ងារ (Save Agent)
+                </button>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 14 }}>
+              <input
+                type="text"
+                value={dbAgentSearch}
+                placeholder="ស្វែងរកភ្នាក់ងារ..."
+                onChange={(e) => setDbAgentSearch(e.target.value)}
+              />
+            </div>
+
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>សាខា</th>
+                  <th>កូដភ្នាក់ងារ</th>
+                  <th>ឈ្មោះខ្មែរ</th>
+                  <th>ឈ្មោះឡាតាំង</th>
+                  <th>អត្តសញ្ញាណប័ណ្ណ</th>
+                  <th>ទូរស័ព្ទ</th>
+                  <th>គណនីធនាគារ</th>
+                  <th>អាសយដ្ឋាន</th>
+                  <th>សកម្មភាព</th>
+                </tr>
+              </thead>
+              <tbody>
+                {agents
+                  .filter(
+                    (ag) =>
+                      !dbAgentSearch ||
+                      (ag.name_kh || "").toLowerCase().includes(dbAgentSearch.toLowerCase()) ||
+                      (ag.name_latin || "").toLowerCase().includes(dbAgentSearch.toLowerCase()) ||
+                      (ag.agent_code || "").toLowerCase().includes(dbAgentSearch.toLowerCase()) ||
+                      (ag.phone || "").includes(dbAgentSearch)
+                  )
+                  .map((ag) => (
+                    <tr key={ag.id}>
+                      <td>{ag.id}</td>
+                      <td>
+                        <span className="badge badge-new">{agentBranchCode(ag, branches)}</span>
+                      </td>
+                      <td>
+                        <span className="badge badge-old">{ag.agent_code || "-"}</span>
+                      </td>
+                      <td>
+                        <strong>{ag.name_kh}</strong>
+                      </td>
+                      <td>{ag.name_latin}</td>
+                      <td>{ag.id_number}</td>
+                      <td>{ag.phone}</td>
+                      <td>
+                        {ag.bank_name}: {ag.bank_account_no} ({ag.bank_account_name})
+                      </td>
+                      <td>{ag.address_full}</td>
+                      <td style={{ display: "flex", gap: 6 }}>
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => {
+                            setAgEditId(ag.id);
+                            setAgBranch(agentBranchCode(ag, branches));
+                            setAgCode(ag.agent_code || "");
+                            setAgNameKh(ag.name_kh || "");
+                            setAgNameLatin(ag.name_latin || "");
+                            setAgIdNo(ag.id_number || "");
+                            setAgPhone(ag.phone || "");
+                            setAgBankName(ag.bank_name || "eMoney");
+                            setAgBankNo(ag.bank_account_no || "");
+                            setAgAddr(ag.address_full || "");
+                          }}
+                        >
+                          កែប្រែ
+                        </button>
+                        <button
+                          className="btn btn-preview btn-sm"
+                          onClick={() => {
+                            openContractFlow("OLD");
+                            fillFormFromAgent(ag, true);
+                          }}
+                        >
+                          បោះពុម្ភទម្រង់ចាស់
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* 5. HISTORY VIEW */}
+        {activeTab === "history" && (
+          <div className="card">
+            <div className="section-title">
+              <span>ប្រវត្តិកិច្ចសន្យាដែលបានបង្កើត (Contracts History)</span>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>លេខកិច្ចសន្យា</th>
+                  <th>កាលបរិច្ឆេទ</th>
+                  <th>សាខា</th>
+                  <th>ភ្នាក់ងារ (ភាគី ខ)</th>
+                  <th>ទម្រង់</th>
+                  <th>ប្រាក់កក់ឧបករណ៍</th>
+                  <th>ឯកសារ</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentContracts.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} style={{ textAlign: "center", color: "var(--muted)" }}>
+                      មិនទាន់មានប្រវត្តិកិច្ចសន្យាទេ
+                    </td>
+                  </tr>
+                ) : (
+                  recentContracts.map((c) => (
+                    <tr key={c.id}>
+                      <td>
+                        <strong>{c.contract_no}</strong>
+                      </td>
+                      <td>{c.contract_date}</td>
+                      <td>{c.branch_code}</td>
+                      <td>
+                        {c.agent_name_kh} ({c.agent_name_latin})
+                      </td>
+                      <td>
+                        <span className={`badge ${c.template_type === "NEW" ? "badge-new" : "badge-old"}`}>
+                          {c.template_type}
+                        </span>
+                      </td>
+                      <td>${c.eq_deposit_total}</td>
+                      <td>
+                        {c.docx_path && (
+                          <span style={{ fontSize: "0.85rem", color: "#64748b" }}>{c.docx_path}</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* 6. SETTINGS VIEW */}
+        {activeTab === "settings" && (
+          <div className="card">
+            <div className="section-title">
+              <span>ការកំណត់ទម្រង់លេខ និង បញ្ជី Tags ក្នុងគំរូ Word (.docx)</span>
+            </div>
+            <div
+              className="grid-2"
+              style={{
+                background: "#F3E8D2",
+                padding: 16,
+                borderRadius: 10,
+                border: "1px solid #e5d8be",
+                marginBottom: 24,
+              }}
+            >
+              <div className="form-group">
+                <label>ទម្រង់លេខលំនាំដើមសម្រាប់កិច្ចសន្យាភ្នាក់ងារថ្មី (NEW Template)</label>
+                <select
+                  value={settings.new_digit_style}
+                  onChange={(e) =>
+                    setSettings({ ...settings, new_digit_style: e.target.value as any })
+                  }
+                >
+                  <option value="khmer">លេខខ្មែរ (០១២៣៤៥៦៧៨៩)</option>
+                  <option value="latin">លេខឡាតាំង (0123456789)</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label>ទម្រង់លេខលំនាំដើមសម្រាប់កិច្ចសន្យាភ្នាក់ងារចាស់ (OLD Template)</label>
+                <select
+                  value={settings.old_digit_style}
+                  onChange={(e) =>
+                    setSettings({ ...settings, old_digit_style: e.target.value as any })
+                  }
+                >
+                  <option value="latin">លេខឡាតាំង (0123456789)</option>
+                  <option value="khmer">លេខខ្មែរ (០១២៣៤៥៦៧៨៩)</option>
+                </select>
+              </div>
+              <div style={{ gridColumn: "1 / -1" }}>
+                <button className="btn btn-preview btn-sm" onClick={handleSaveSettings}>
+                  រក្សាទុកការកំណត់ (Save Settings)
+                </button>
+              </div>
+            </div>
+
+            <h3 className="section-title">
+              បញ្ជី Tags ក្នុងគំរូទី ១៖ new_agreement_template.docx (ភ្នាក់ងារថ្មី)
+            </h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>ទីតាំងក្នុងឯកសារ</th>
+                  <th>Tag</th>
+                  <th>អត្ថបទគំរូដើមដែលត្រូវបានជំនួស</th>
+                  <th>ការពិពណ៌នា</th>
+                </tr>
+              </thead>
+              <tbody>
+                {initialData.tag_reference?.new_template?.map((item, idx) => (
+                  <tr key={idx}>
+                    <td>{item.location}</td>
+                    <td>
+                      <code>{item.tag}</code>
+                    </td>
+                    <td>{item.original_text}</td>
+                    <td>{item.description}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <h3 className="section-title" style={{ marginTop: 28 }}>
+              បញ្ជី Tags ក្នុងគំរូទី ២៖ old_agreement_template.docx (ភ្នាក់ងារចាស់)
+            </h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>ទីតាំងក្នុងឯកសារ</th>
+                  <th>Tag</th>
+                  <th>អត្ថបទគំរូដើមដែលត្រូវបានជំនួស</th>
+                  <th>ការពិពណ៌នា</th>
+                </tr>
+              </thead>
+              <tbody>
+                {initialData.tag_reference?.old_template?.map((item, idx) => (
+                  <tr key={idx}>
+                    <td>{item.location}</td>
+                    <td>
+                      <code>{item.tag}</code>
+                    </td>
+                    <td>{item.original_text}</td>
+                    <td>{item.description}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}

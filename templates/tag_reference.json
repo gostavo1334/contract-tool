@@ -1,0 +1,288 @@
+{
+  "new_template": [
+    {
+      "location": "Header / Contract No. (Body P2)",
+      "tag": "{{contract_no}}",
+      "original_text": "MONA011",
+      "description": "Contract number (branch code + 3-digit sequence)"
+    },
+    {
+      "location": "Preamble Date - Day (Body P3)",
+      "tag": "{{day}}",
+      "original_text": "១៩",
+      "description": "Day in Khmer numerals (e.g. ១៩)"
+    },
+    {
+      "location": "Preamble Date - Month (Body P3)",
+      "tag": "{{month}}",
+      "original_text": "តុលា",
+      "description": "Khmer month name (e.g. តុលា)"
+    },
+    {
+      "location": "Preamble Date - Year (Body P3)",
+      "tag": "{{year}}",
+      "original_text": "2026",
+      "description": "4-digit Latin year (e.g. 2026)"
+    },
+    {
+      "location": "Party A Body - Director Name (Body P4)",
+      "tag": "{{director_body_name}}",
+      "original_text": "លាង រដ្ឋា",
+      "description": "Branch director name in body (Khmer or Latin per branch body_name_format)"
+    },
+    {
+      "location": "Party A Body - Branch Province (Body P4)",
+      "tag": "{{branch_province_kh}}",
+      "original_text": "មណ្ឌលគិរី",
+      "description": "Branch province name in Khmer"
+    },
+    {
+      "location": "Party B Body - Agent Khmer Name (Body P5)",
+      "tag": "{{agent_name_kh}}",
+      "original_text": "ប៉ា ចំរើន ",
+      "description": "Party B full name in Khmer"
+    },
+    {
+      "location": "Party B Body - National ID Number (Body P5)",
+      "tag": "{{id_number}}",
+      "original_text": "២៣០០៦៧៨១២",
+      "description": "Khmer National ID number"
+    },
+    {
+      "location": "Party B Body - Residence Address (Body P5)",
+      "tag": "{{address}}",
+      "original_text": "ផ្លូវ៧៦ ភូមិពូហ្យាម ឃុំ សែនមនោរម្យ ស្រុកអូរាំង ខេត្តមណ្ឌលគិរី",
+      "description": "Party B full address (1st occurrence - residence)"
+    },
+    {
+      "location": "Party B Body - Phone Number (Body P5)",
+      "tag": "{{phone}}",
+      "original_text": "០៦០៣៦៣៦៩១",
+      "description": "Party B phone number"
+    },
+    {
+      "location": "Party B Body - Registration Point Address (Body P5)",
+      "tag": "{{registration_address}}",
+      "original_text": "ផ្លូវ៧៦ ភូមិពូហ្យាម ឃុំ សែនមនោរម្យ ស្រុកអូរាំង ខេត្តមណ្ឌលគិរី",
+      "description": "Party B full address (2nd occurrence - registration point)"
+    },
+    {
+      "location": "Party B Body - Bank Account Name (Body P5)",
+      "tag": "{{bank_account_name}}",
+      "original_text": "Pa Chamroun",
+      "description": "Party B bank account name in Latin"
+    },
+    {
+      "location": "Party B Body - Bank Account Number (Body P5)",
+      "tag": "{{bank_account_no}}",
+      "original_text": "០៦០៣៦៣៦៩១",
+      "description": "Party B bank account number"
+    },
+    {
+      "location": "Party B Body - Bank Name (Body P5)",
+      "tag": "{{bank_name}}",
+      "original_text": "eMoney",
+      "description": "Bank name (default eMoney)"
+    },
+    {
+      "location": "Contract Signature Block - Party A (Body Tbl 157)",
+      "tag": "{{director_latin}}",
+      "original_text": "Leang Ratha",
+      "description": "Director Latin name in main contract signature block"
+    },
+    {
+      "location": "Contract Signature Block - Party B (Body Tbl 157)",
+      "tag": "{{agent_name_kh}}",
+      "original_text": "ប៉ា ចំរើន ",
+      "description": "Agent Khmer name in main contract signature block"
+    },
+    {
+      "location": "Annex 1 Table Row 1 - Thermal Printer Checkbox (Body Tbl 168)",
+      "tag": "{{eq_printer}}",
+      "original_text": "☐",
+      "description": "Checkbox (☑ or ☐) for Xprinter XP-DT427B thermal printer ($150)"
+    },
+    {
+      "location": "Annex 1 Table Row 2 - 30kg Scale Checkbox (Body Tbl 168)",
+      "tag": "{{eq_scale}}",
+      "original_text": "☐",
+      "description": "Checkbox (☑ or ☐) for 30 kg mechanical scale ($65)"
+    },
+    {
+      "location": "Annex 1 Table Row 3 - Plastic Basket Checkbox (Body Tbl 168)",
+      "tag": "{{eq_basket}}",
+      "original_text": "☐",
+      "description": "Checkbox (☑ or ☐) for Delivery plastic basket ($35)"
+    },
+    {
+      "location": "Annex 1 Signature Block - Party A (Body Tbl 174)",
+      "tag": "{{director_latin}}",
+      "original_text": "Leang Ratha",
+      "description": "Director Latin name in Annex 1 signature block"
+    },
+    {
+      "location": "Annex 1 Signature Block - Party B (Body Tbl 174)",
+      "tag": "{{agent_name_kh}}",
+      "original_text": "ប៉ា ចំរើន ",
+      "description": "Agent Khmer name in Annex 1 signature block"
+    }
+  ],
+  "old_template": [
+    {
+      "location": "Header / Contract No. (Body P2)",
+      "tag": "{{contract_no}}",
+      "original_text": "PNPA010",
+      "description": "Contract number (branch code + 3-digit sequence)"
+    },
+    {
+      "location": "Preamble Date - Day (Body P3)",
+      "tag": "{{day}}",
+      "original_text": "01",
+      "description": "2-digit Latin day (e.g. 01)"
+    },
+    {
+      "location": "Preamble Date - Month (Body P3)",
+      "tag": "{{month}}",
+      "original_text": "05",
+      "description": "2-digit Latin month (e.g. 05)"
+    },
+    {
+      "location": "Preamble Date - Year (Body P3)",
+      "tag": "{{year}}",
+      "original_text": "2026",
+      "description": "4-digit Latin year (e.g. 2026)"
+    },
+    {
+      "location": "Party A Body - Director Name (Body P4)",
+      "tag": "{{director_body_name}}",
+      "original_text": "NGUYEN TRONG TUAN ANH",
+      "description": "Branch director name in body (Latin or Khmer per branch body_name_format)"
+    },
+    {
+      "location": "Party A Body - Branch Province (Body P4)",
+      "tag": "{{branch_province_kh}}",
+      "original_text": "ភ្នំពេញ",
+      "description": "Branch province name in Khmer"
+    },
+    {
+      "location": "Party B Body - Company Name Blank (Body P5)",
+      "tag": "{{company_name}}",
+      "original_text": "..........................................................................",
+      "description": "Optional company name (defaults to 74 dots if blank)"
+    },
+    {
+      "location": "Party B Body - Company Law Blank (Body P5)",
+      "tag": "{{company_law}}",
+      "original_text": "............................................................................................................",
+      "description": "Optional company governing law (defaults to 108 dots if blank)"
+    },
+    {
+      "location": "Party B Body - Commercial Reg. No. Blank (Body P5)",
+      "tag": "{{company_reg_no}}",
+      "original_text": "..........................................................................................................",
+      "description": "Optional commercial registration number (defaults to 106 dots if blank)"
+    },
+    {
+      "location": "Party B Body - Commercial Reg. Date Blank (Body P5)",
+      "tag": "{{company_reg_date}}",
+      "original_text": "...................................................................................",
+      "description": "Optional commercial registration issue date (defaults to 83 dots if blank)"
+    },
+    {
+      "location": "Party B Body - Tax No. Blank (Body P5)",
+      "tag": "{{company_tax_no}}",
+      "original_text": "..........................................................",
+      "description": "Optional tax identification number (defaults to 58 dots if blank)"
+    },
+    {
+      "location": "Party B Body - Company Registered Address Blank (Body P5)",
+      "tag": "{{company_address}}",
+      "original_text": "..........................................................................................................",
+      "description": "Optional company registered address (defaults to 106 dots if blank)"
+    },
+    {
+      "location": "Party B Body - Agent Khmer Name (Body P5)",
+      "tag": "{{agent_name_kh}}",
+      "original_text": "ស៊ីម វិចិត្រ",
+      "description": "Party B full name in Khmer"
+    },
+    {
+      "location": "Party B Body - National ID / Passport Number (Body P5)",
+      "tag": "{{id_number}}",
+      "original_text": "110512075(01)",
+      "description": "National ID or passport number"
+    },
+    {
+      "location": "Party B Body - Phone Number (Body P5)",
+      "tag": "{{phone}}",
+      "original_text": "0978850091",
+      "description": "Party B phone number"
+    },
+    {
+      "location": "Party B Body - Email Address (Body P5)",
+      "tag": "{{email}}",
+      "original_text": "skan1711@gmail.com",
+      "description": "Party B email address (OLD template only)"
+    },
+    {
+      "location": "Party B Body - Registration Point Address (Body P5)",
+      "tag": "{{address}}",
+      "original_text": "ផ្ទះលេខ12 ផ្លូវ 123 ភូមិ​ព្រៃឈើទាល ឃុំ​អង្គរជ័យ ស្រុក​អង្គរជ័យ ខេត្ត​កំពត",
+      "description": "Party B full registration point address"
+    },
+    {
+      "location": "Party B Body - Bank Account Name (Body P5)",
+      "tag": "{{bank_account_name}}",
+      "original_text": "Sim Vichet",
+      "description": "Party B bank account name in Latin"
+    },
+    {
+      "location": "Party B Body - Bank Account Number (Body P5)",
+      "tag": "{{bank_account_no}}",
+      "original_text": "855978850091",
+      "description": "Party B bank account number"
+    },
+    {
+      "location": "Party B Body - Bank Name (Body P5)",
+      "tag": "{{bank_name}}",
+      "original_text": "eMoney",
+      "description": "Bank name (default eMoney)"
+    },
+    {
+      "location": "Contract Signature Block - Party A (Body Tbl 156)",
+      "tag": "{{director_latin}}",
+      "original_text": "NGUYEN TRONG TUAN ANH",
+      "description": "Director Latin name in main contract signature block"
+    },
+    {
+      "location": "Contract Signature Block - Party B (Body Tbl 156)",
+      "tag": "{{agent_name_kh}}",
+      "original_text": "ស៊ីម វិចិត្រ",
+      "description": "Agent Khmer name in main contract signature block"
+    },
+    {
+      "location": "Annex 1 Table Row 2 - 30kg Scale Checkbox (Body Tbl 190)",
+      "tag": "{{eq_scale}}",
+      "original_text": "☐",
+      "description": "Checkbox (☑ or ☐) for 30 kg mechanical scale ($65); Printer row 1 stays fixed 'ចាំបាច់'"
+    },
+    {
+      "location": "Annex 1 Table Row 3 - Plastic Basket Checkbox (Body Tbl 190)",
+      "tag": "{{eq_basket}}",
+      "original_text": "☐",
+      "description": "Checkbox (☑ or ☐) for Delivery plastic basket ($35)"
+    },
+    {
+      "location": "Annex 1 Signature Block - Party A (Body Tbl 198)",
+      "tag": "{{director_latin}}",
+      "original_text": "Nguyen Trong Tuan Anh",
+      "description": "Director Latin name in Annex 1 signature block"
+    },
+    {
+      "location": "Annex 1 Signature Block - Party B (Body Tbl 198)",
+      "tag": "{{agent_name_kh}}",
+      "original_text": "ស៊ីម វិចិត្រ",
+      "description": "Agent Khmer name in Annex 1 signature block"
+    }
+  ]
+}
