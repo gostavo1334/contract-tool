@@ -38,26 +38,37 @@ export async function POST(req: NextRequest) {
     const settingsMap: Record<string, any> = {};
     for (const s of settingsData || []) settingsMap[s.key] = s.value;
 
-    const prepared = buildTemplateContext(payload, branch, settingsMap);
-    const docxBuf = renderDocxBuffer(prepared);
-    const pdfBuf = await convertDocxToPdf(docxBuf);
+    const preparedKh = buildTemplateContext({ ...payload, lang: "kh" }, branch, settingsMap);
+    const preparedEn = buildTemplateContext({ ...payload, lang: "en" }, branch, settingsMap);
+    const docxBufKh = renderDocxBuffer(preparedKh);
+    const docxBufEn = renderDocxBuffer(preparedEn);
+    const pdfBufKh = await convertDocxToPdf(docxBufKh);
+    const pdfBufEn = await convertDocxToPdf(docxBufEn);
 
-    const docxBase64 = `data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,${docxBuf.toString("base64")}`;
-    const pdfBase64 = pdfBuf ? `data:application/pdf;base64,${pdfBuf.toString("base64")}` : null;
+    const docxBase64Kh = `data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,${docxBufKh.toString("base64")}`;
+    const docxBase64En = `data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,${docxBufEn.toString("base64")}`;
+    const pdfBase64Kh = pdfBufKh ? `data:application/pdf;base64,${pdfBufKh.toString("base64")}` : null;
+    const pdfBase64En = pdfBufEn ? `data:application/pdf;base64,${pdfBufEn.toString("base64")}` : null;
 
     return NextResponse.json({
       status: "ok",
-      template_type: prepared.template_type,
-      lang: prepared.lang,
-      digit_style: prepared.digit_style,
-      date_info: prepared.date_info,
-      eq_deposit_total: prepared.eq_deposit_total,
-      fixed_deposit: prepared.fixed_deposit,
-      address_full: prepared.address_full,
-      context: prepared.context,
+      template_type: preparedKh.template_type,
+      lang: preparedKh.lang,
+      digit_style: preparedKh.digit_style,
+      date_info: preparedKh.date_info,
+      eq_deposit_total: preparedKh.eq_deposit_total,
+      fixed_deposit: preparedKh.fixed_deposit,
+      address_full: preparedKh.address_full,
+      context: preparedKh.context,
+      context_kh: preparedKh.context,
+      context_en: preparedEn.context,
       branch: branch,
-      preview_docx_base64: docxBase64,
-      preview_pdf_base64: pdfBase64,
+      preview_docx_base64: docxBase64Kh,
+      preview_docx_base64_kh: docxBase64Kh,
+      preview_docx_base64_en: docxBase64En,
+      preview_pdf_base64: pdfBase64Kh,
+      preview_pdf_base64_kh: pdfBase64Kh,
+      preview_pdf_base64_en: pdfBase64En,
     });
   } catch (err: any) {
     return NextResponse.json({ detail: err.message }, { status: 500 });

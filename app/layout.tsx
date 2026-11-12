@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "ប្រព័ន្ធបំពេញកិច្ចសន្យាភ្នាក់ងារ មិត្តហ្វូន អ៊ិចប្រេស",
-  description: "Metfone Express Agent Contract Filler — Next.js & Supabase",
+  description: "Metfone Express Agent Contract Filling System",
 };
 
 export default function RootLayout({

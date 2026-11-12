@@ -1,5 +1,8 @@
 import fs from "fs";
 import path from "path";
+import os from "os";
+import { execFile } from "child_process";
+import { promisify } from "util";
 import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
 import {
@@ -192,30 +195,94 @@ export function renderDocxBuffer(prepared: PreparedContext): Buffer {
   return doc.getZip().generate({ type: "nodebuffer", compression: "DEFLATE" });
 }
 
-export async function convertDocxToPdf(docxBuffer: Buffer): Promise<Buffer | null> {
-  const converterUrl = process.env.PDF_CONVERTER_URL;
-  if (!converterUrl) {
-    return null;
-  }
-  try {
-    const formData = new FormData();
-    const blob = new Blob([new Uint8Array(docxBuffer)], {
-      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    });
-    formData.append("files", blob, "contract.docx");
+const execFileAsync = promisify(execFile);
 
-    const res = await fetch(converterUrl, {
-      method: "POST",
-      body: formData,
-    });
-    if (!res.ok) {
-      console.warn("External PDF converter failed with status:", res.status);
-      return null;
+function findSofficeBinary(): string | null {
+  const candidates = [
+    "/opt/homebrew/bin/soffice",
+    "/usr/local/bin/soffice",
+    "/Applications/LibreOffice.app/Contents/MacOS/soffice",
+    "/usr/bin/soffice",
+    "/usr/bin/libreoffice",
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(/*turbopackIgnore: true*/ c)) {
+      try {
+        fs.accessSync(c, fs.constants.X_OK);
+        return c;
+      } catch {
+        // continue
+      }
     }
-    const arrayBuf = await res.arrayBuffer();
-    return Buffer.from(arrayBuf);
-  } catch (err) {
-    console.warn("PDF conversion error:", err);
-    return null;
   }
+  return null;
+}
+
+export async function convertDocxToPdf(docxBuffer: Buffer): Promise<Buffer | null> {
+  // 1. Try local LibreOffice (soffice)
+  const soffice = findSofficeBinary();
+  if (soffice) {
+    let tmpDir = "";
+    try {
+      tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "soffice_pdf_"));
+      const docxPath = path.join(tmpDir, "contract.docx");
+      const profileDir = path.join(tmpDir, "profile");
+      fs.mkdirSync(profileDir, { recursive: true });
+      fs.writeFileSync(docxPath, docxBuffer);
+
+      await execFileAsync(
+        soffice,
+        [
+          `-env:UserInstallation=file://${profileDir}`,
+          "--headless",
+          "--convert-to",
+          "pdf",
+          "--outdir",
+          tmpDir,
+          docxPath,
+        ],
+        { timeout: 45000 }
+      );
+
+      const pdfPath = path.join(tmpDir, "contract.pdf");
+      if (fs.existsSync(/*turbopackIgnore: true*/ pdfPath)) {
+        const pdfBuf = fs.readFileSync(pdfPath);
+        return pdfBuf;
+      }
+    } catch (err) {
+      console.warn("Local LibreOffice conversion error:", err);
+    } finally {
+      if (tmpDir && fs.existsSync(/*turbopackIgnore: true*/ tmpDir)) {
+        try {
+          fs.rmSync(tmpDir, { recursive: true, force: true });
+        } catch {}
+      }
+    }
+  }
+
+  // 2. Try external converter microservice (e.g. Gotenberg)
+  const converterUrl = process.env.PDF_CONVERTER_URL;
+  if (converterUrl) {
+    try {
+      const formData = new FormData();
+      const blob = new Blob([new Uint8Array(docxBuffer)], {
+        type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      });
+      formData.append("files", blob, "contract.docx");
+
+      const res = await fetch(converterUrl, {
+        method: "POST",
+        body: formData,
+      });
+      if (res.ok) {
+        const arrayBuf = await res.arrayBuffer();
+        return Buffer.from(arrayBuf);
+      }
+      console.warn("External PDF converter failed with status:", res.status);
+    } catch (err) {
+      console.warn("PDF conversion error:", err);
+    }
+  }
+
+  return null;
 }

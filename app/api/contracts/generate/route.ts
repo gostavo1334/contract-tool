@@ -23,28 +23,44 @@ export async function POST(req: NextRequest) {
     const settingsMap: Record<string, any> = {};
     for (const s of settingsData || []) settingsMap[s.key] = s.value;
 
-    const prepared = buildTemplateContext(payload, branch, settingsMap);
-    const docxBuf = renderDocxBuffer(prepared);
-    const pdfBuf = await convertDocxToPdf(docxBuf);
+    // Render Khmer contract
+    const preparedKh = buildTemplateContext({ ...payload, lang: "kh" }, branch, settingsMap);
+    const docxBufKh = renderDocxBuffer(preparedKh);
+    const pdfBufKh = await convertDocxToPdf(docxBufKh);
 
-    const ctx = prepared.context;
-    const contractNo = ctx.contract_no;
-    const latinSlug = (ctx.agent_name_latin || "Agent").replace(/[^A-Za-z0-9]+/g, "_");
-    const langSuffix = prepared.lang === "en" ? "_EN" : "";
-    const filenameStem = `${prepared.template_type}${langSuffix}_${contractNo}_${latinSlug}`;
-    const docxFilename = `${filenameStem}.docx`;
-    const pdfFilename = `${filenameStem}.pdf`;
+    // Render English contract
+    const preparedEn = buildTemplateContext({ ...payload, lang: "en" }, branch, settingsMap);
+    const docxBufEn = renderDocxBuffer(preparedEn);
+    const pdfBufEn = await convertDocxToPdf(docxBufEn);
 
-    // Upload to Supabase Storage if bucket exists
-    let docxPath = docxFilename;
-    let pdfPath = pdfBuf ? pdfFilename : "";
+    const contractNo = preparedKh.context.contract_no;
+    const latinSlug = (preparedKh.context.agent_name_latin || "Agent").replace(/[^A-Za-z0-9]+/g, "_");
+
+    const docxFilenameKh = `${preparedKh.template_type}_${contractNo}_${latinSlug}_KH.docx`;
+    const pdfFilenameKh = `${preparedKh.template_type}_${contractNo}_${latinSlug}_KH.pdf`;
+    const docxFilenameEn = `${preparedEn.template_type}_${contractNo}_${latinSlug}_EN.docx`;
+    const pdfFilenameEn = `${preparedEn.template_type}_${contractNo}_${latinSlug}_EN.pdf`;
+
+    // Upload both to Supabase Storage if bucket exists
+    let docxPath = docxFilenameKh;
+    let pdfPath = pdfBufKh ? pdfFilenameKh : "";
     try {
-      await supabase.storage.from("contracts").upload(docxFilename, docxBuf, {
+      await supabase.storage.from("contracts").upload(docxFilenameKh, docxBufKh, {
         contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         upsert: true,
       });
-      if (pdfBuf) {
-        await supabase.storage.from("contracts").upload(pdfFilename, pdfBuf, {
+      await supabase.storage.from("contracts").upload(docxFilenameEn, docxBufEn, {
+        contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        upsert: true,
+      });
+      if (pdfBufKh) {
+        await supabase.storage.from("contracts").upload(pdfFilenameKh, pdfBufKh, {
+          contentType: "application/pdf",
+          upsert: true,
+        });
+      }
+      if (pdfBufEn) {
+        await supabase.storage.from("contracts").upload(pdfFilenameEn, pdfBufEn, {
           contentType: "application/pdf",
           upsert: true,
         });
@@ -57,8 +73,8 @@ export async function POST(req: NextRequest) {
     const agentPayload: any = {
       agent_code: contractNo,
       branch_code: branch.code,
-      name_kh: ctx.agent_name_kh,
-      name_latin: ctx.agent_name_latin,
+      name_kh: preparedKh.context.agent_name_kh,
+      name_latin: preparedKh.context.agent_name_latin,
       id_number: toLatinDigits(payload.id_number),
       id_number_norm: toLatinDigits(payload.id_number),
       phone: toLatinDigits(payload.phone),
@@ -70,9 +86,9 @@ export async function POST(req: NextRequest) {
       commune: payload.commune,
       district: payload.district,
       province: payload.province,
-      address_full: prepared.address_full,
-      bank_name: ctx.bank_name,
-      bank_account_name: ctx.bank_account_name,
+      address_full: preparedKh.address_full,
+      bank_name: preparedKh.context.bank_name,
+      bank_account_name: preparedKh.context.bank_account_name,
       bank_account_no: toLatinDigits(payload.bank_account_no),
       company_name: payload.company_name,
       company_law: payload.company_law,
@@ -102,19 +118,19 @@ export async function POST(req: NextRequest) {
     // Record contract history
     const contractPayload = {
       contract_no: contractNo,
-      contract_date: prepared.date_info.ddmmyyyy,
+      contract_date: preparedKh.date_info.ddmmyyyy,
       branch_code: branch.code,
       agent_id: savedAgent?.id || null,
-      agent_name_kh: ctx.agent_name_kh,
-      agent_name_latin: ctx.agent_name_latin,
+      agent_name_kh: preparedKh.context.agent_name_kh,
+      agent_name_latin: preparedKh.context.agent_name_latin,
       agent_phone: toLatinDigits(payload.phone),
       agent_id_number: toLatinDigits(payload.id_number),
-      template_type: prepared.template_type,
-      eq_printer: prepared.eq_printer_bool,
-      eq_scale: prepared.eq_scale_bool,
-      eq_basket: prepared.eq_basket_bool,
-      eq_deposit_total: prepared.eq_deposit_total,
-      fixed_deposit: prepared.fixed_deposit,
+      template_type: preparedKh.template_type,
+      eq_printer: preparedKh.eq_printer_bool,
+      eq_scale: preparedKh.eq_scale_bool,
+      eq_basket: preparedKh.eq_basket_bool,
+      eq_deposit_total: preparedKh.eq_deposit_total,
+      fixed_deposit: preparedKh.fixed_deposit,
       docx_path: docxPath,
       pdf_path: pdfPath,
       payload: payload,
@@ -134,8 +150,10 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const docxBase64 = `data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,${docxBuf.toString("base64")}`;
-    const pdfBase64 = pdfBuf ? `data:application/pdf;base64,${pdfBuf.toString("base64")}` : null;
+    const docxBase64Kh = `data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,${docxBufKh.toString("base64")}`;
+    const pdfBase64Kh = pdfBufKh ? `data:application/pdf;base64,${pdfBufKh.toString("base64")}` : null;
+    const docxBase64En = `data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,${docxBufEn.toString("base64")}`;
+    const pdfBase64En = pdfBufEn ? `data:application/pdf;base64,${pdfBufEn.toString("base64")}` : null;
 
     const { data: updatedBranches } = await supabase.from("branches").select("*").order("code", { ascending: true });
 
@@ -144,13 +162,24 @@ export async function POST(req: NextRequest) {
       agent: savedAgent,
       contract: contractRecord,
       branches: updatedBranches || [],
-      docx_base64: docxBase64,
-      docx_filename: docxFilename,
-      pdf_base64: pdfBase64,
-      pdf_filename: pdfFilename,
-      context: ctx,
-      eq_deposit_total: prepared.eq_deposit_total,
-      fixed_deposit: prepared.fixed_deposit,
+      docx_base64_kh: docxBase64Kh,
+      docx_filename_kh: docxFilenameKh,
+      pdf_base64_kh: pdfBase64Kh,
+      pdf_filename_kh: pdfFilenameKh,
+      docx_base64_en: docxBase64En,
+      docx_filename_en: docxFilenameEn,
+      pdf_base64_en: pdfBase64En,
+      pdf_filename_en: pdfFilenameEn,
+      // Default compatibility keys
+      docx_base64: docxBase64Kh,
+      docx_filename: docxFilenameKh,
+      pdf_base64: pdfBase64Kh,
+      pdf_filename: pdfFilenameKh,
+      context: preparedKh.context,
+      context_kh: preparedKh.context,
+      context_en: preparedEn.context,
+      eq_deposit_total: preparedKh.eq_deposit_total,
+      fixed_deposit: preparedKh.fixed_deposit,
     });
   } catch (err: any) {
     return NextResponse.json({ detail: err.message }, { status: 500 });

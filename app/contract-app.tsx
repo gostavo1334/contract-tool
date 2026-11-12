@@ -114,6 +114,7 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
 
   // Preview panel
   const [previewData, setPreviewData] = useState<any>(null);
+  const [previewTab, setPreviewTab] = useState<"kh" | "en">("kh");
   const [previewLoading, setPreviewLoading] = useState<boolean>(false);
   const [generateLoading, setGenerateLoading] = useState<boolean>(false);
 
@@ -456,7 +457,18 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
     }
   };
 
-  const handleGenerate = async (format: "docx" | "pdf") => {
+  const triggerDownload = (url: string, filename: string) => {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  const handleGenerate = async (
+    target: "both" | "docx_kh" | "docx_en" | "pdf_kh" | "pdf_en" | "docx" | "pdf" = "both"
+  ) => {
     setGenerateLoading(true);
     try {
       const payload = collectPayload();
@@ -479,24 +491,40 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
       }
       showStatus(`បានបង្កើតកិច្ចសន្យាលេខ ${data.contract?.contract_no} និងរក្សាទុកភ្នាក់ងារ «${data.agent?.name_kh}» ដោយជោគជ័យ!`);
 
-      // Trigger automatic download
-      if (format === "docx" && data.docx_base64) {
-        const a = document.createElement("a");
-        a.href = data.docx_base64;
-        a.download = data.docx_filename || "contract.docx";
-        a.click();
-      } else if (format === "pdf" && data.pdf_base64) {
-        const a = document.createElement("a");
-        a.href = data.pdf_base64;
-        a.download = data.pdf_filename || "contract.pdf";
-        a.click();
-      } else if (format === "pdf" && !data.pdf_base64) {
-        // Fallback: download docx if PDF converter not configured
-        showStatus("ប្រព័ន្ធបានបង្កើតឯកសារ .docx រួចរាល់ (PDF converter មិនទាន់ភ្ជាប់)", false);
-        const a = document.createElement("a");
-        a.href = data.docx_base64;
-        a.download = data.docx_filename || "contract.docx";
-        a.click();
+      // Trigger requested downloads
+      if (target === "both") {
+        if (data.docx_base64_kh) {
+          triggerDownload(data.docx_base64_kh, data.docx_filename_kh || "contract_KH.docx");
+        }
+        setTimeout(() => {
+          if (data.docx_base64_en) {
+            triggerDownload(data.docx_base64_en, data.docx_filename_en || "contract_EN.docx");
+          }
+        }, 350);
+      } else if (target === "docx_kh" || target === "docx") {
+        const file = data.docx_base64_kh || data.docx_base64;
+        const name = data.docx_filename_kh || data.docx_filename || "contract_KH.docx";
+        if (file) triggerDownload(file, name);
+      } else if (target === "docx_en") {
+        const file = data.docx_base64_en;
+        const name = data.docx_filename_en || "contract_EN.docx";
+        if (file) triggerDownload(file, name);
+      } else if (target === "pdf_kh" || target === "pdf") {
+        const file = data.pdf_base64_kh || data.pdf_base64;
+        const name = data.pdf_filename_kh || data.pdf_filename || "contract_KH.pdf";
+        if (file) {
+          triggerDownload(file, name);
+        } else {
+          showStatus("មិនអាចបង្កើតជា PDF បានទេ (PDF converter មិនទាន់ដំណើរការ)។ សូមទាញយកជា Word (.docx) ជំនួសវិញ។", true);
+        }
+      } else if (target === "pdf_en") {
+        const file = data.pdf_base64_en;
+        const name = data.pdf_filename_en || "contract_EN.pdf";
+        if (file) {
+          triggerDownload(file, name);
+        } else {
+          showStatus("មិនអាចបង្កើតជា PDF បានទេ (PDF converter មិនទាន់ដំណើរការ)។ សូមទាញយកជា Word (.docx) ជំនួសវិញ។", true);
+        }
       }
     } catch (err: any) {
       showStatus("កំហុស៖ " + err.message, true);
@@ -644,7 +672,7 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
           <div>
             <h1 className="brand-title">ប្រព័ន្ធបំពេញកិច្ចសន្យាភ្នាក់ងារ មិត្តហ្វូន អ៊ិចប្រេស</h1>
             <div className="brand-sub">
-              Metfone Express Agent Contract Filler — Next.js &amp; Supabase (Server Rendered)
+              Metfone Express Agent Contract Filler
             </div>
           </div>
           <div className="nav-tabs">
@@ -709,43 +737,14 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
               បង្កើតកិច្ចសន្យាភ្នាក់ងារថ្មី ឬ ស្វែងរកទិន្នន័យភ្នាក់ងារចាស់ដើម្បីបោះពុម្ភកិច្ចសន្យាឡើងវិញ ជាទម្រង់ Word (.docx) និង PDF ដោយស្វ័យប្រវត្តិ។
             </p>
             <div className="home-actions">
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
-                <button className="big-flow-btn" style={{ width: "100%" }} onClick={() => openContractFlow("NEW", "kh")}>
-                  <div className="kh-label">បង្កើតកិច្ចសន្យាភ្នាក់ងារថ្មី (ខ្មែរ)</div>
-                  <div className="en-label">New Agent Contract — Khmer (New_Agreement_with_Agent_-_KH.docx)</div>
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-sm"
-                  style={{ alignSelf: "center", border: "1px solid #E2424A", color: "#E2424A", padding: "6px 14px", fontWeight: 600 }}
-                  onClick={() => openContractFlow("NEW", "en")}
-                >
-                  English Version (New Agreement with Agent - EN)
-                </button>
-              </div>
-
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
-                <button className="big-flow-btn old-flow" style={{ width: "100%" }} onClick={() => openContractFlow("OLD", "kh")}>
-                  <div className="kh-label">បោះពុម្ភកិច្ចសន្យាភ្នាក់ងារចាស់ (ខ្មែរ)</div>
-                  <div className="en-label">Old Agent Contract — Khmer (old_km.docx)</div>
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary btn-sm"
-                  style={{ alignSelf: "center", border: "1px solid #E2424A", color: "#E2424A", padding: "6px 14px", fontWeight: 600 }}
-                  onClick={() => openContractFlow("OLD", "en")}
-                >
-                  English Version (old en)
-                </button>
-              </div>
-            </div>
-
-            <div style={{ marginTop: 28, display: "flex", justifyContent: "center", gap: 12, flexWrap: "wrap" }}>
-              <button className="btn btn-secondary btn-sm" onClick={() => loadSamplePreset("NEW")}>
-                សាកល្បងទិន្នន័យគំរូភ្នាក់ងារថ្មី (MONA011 - ប៉ា ចំរើន)
+              <button className="big-flow-btn" onClick={() => openContractFlow("NEW")}>
+                <div className="kh-label">បង្កើតកិច្ចសន្យាភ្នាក់ងារថ្មី</div>
+                <div className="en-label">New Agent Contract</div>
               </button>
-              <button className="btn btn-secondary btn-sm" onClick={() => loadSamplePreset("OLD")}>
-                សាកល្បងទិន្នន័យគំរូភ្នាក់ងារចាស់ (PNPA010 - ស៊ីម វិចិត្រ)
+
+              <button className="big-flow-btn old-flow" onClick={() => openContractFlow("OLD")}>
+                <div className="kh-label">បោះពុម្ភកិច្ចសន្យាភ្នាក់ងារចាស់</div>
+                <div className="en-label">Old Agent Contract</div>
               </button>
             </div>
           </div>
@@ -822,65 +821,12 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
               <div className="section-title">
                 <span>
                   {templateType === "NEW"
-                    ? contractLang === "en"
-                      ? "បង្កើតកិច្ចសន្យាភ្នាក់ងារថ្មី (New Agent Contract - EN)"
-                      : "បង្កើតកិច្ចសន្យាភ្នាក់ងារថ្មី (Create New Agent Contract)"
-                    : contractLang === "en"
-                      ? "បោះពុម្ភកិច្ចសន្យាភ្នាក់ងារចាស់ឡើងវិញ (Old Agent Contract - EN)"
-                      : "បោះពុម្ភកិច្ចសន្យាភ្នាក់ងារចាស់ឡើងវិញ (Reprint Old Agent Contract)"}
+                    ? "បង្កើតកិច្ចសន្យាភ្នាក់ងារថ្មី (New Agent Contract)"
+                    : "បោះពុម្ភកិច្ចសន្យាភ្នាក់ងារចាស់ឡើងវិញ (Reprint Old Agent Contract)"}
                 </span>
                 <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                  {/* English / Khmer Template Toggle */}
-                  <div
-                    style={{
-                      display: "inline-flex",
-                      borderRadius: 6,
-                      border: "1px solid #E2424A",
-                      overflow: "hidden",
-                    }}
-                  >
-                    <button
-                      type="button"
-                      style={{
-                        padding: "4px 12px",
-                        fontSize: "0.82rem",
-                        fontWeight: 700,
-                        border: "none",
-                        cursor: "pointer",
-                        background: contractLang === "kh" ? "#E2424A" : "#FFFFFF",
-                        color: contractLang === "kh" ? "#FFFFFF" : "#E2424A",
-                        transition: "background 0.2s, color 0.2s",
-                      }}
-                      onClick={() => setContractLang("kh")}
-                    >
-                      ទម្រង់ខ្មែរ (KH)
-                    </button>
-                    <button
-                      type="button"
-                      style={{
-                        padding: "4px 12px",
-                        fontSize: "0.82rem",
-                        fontWeight: 700,
-                        border: "none",
-                        cursor: "pointer",
-                        background: contractLang === "en" ? "#E2424A" : "#FFFFFF",
-                        color: contractLang === "en" ? "#FFFFFF" : "#E2424A",
-                        transition: "background 0.2s, color 0.2s",
-                      }}
-                      onClick={() => setContractLang("en")}
-                    >
-                      English Version (EN)
-                    </button>
-                  </div>
-
                   <span className={`badge ${templateType === "NEW" ? "badge-new" : "badge-old"}`}>
-                    {templateType === "NEW"
-                      ? contractLang === "en"
-                        ? "NEW (EN)"
-                        : "NEW TEMPLATE"
-                      : contractLang === "en"
-                        ? "OLD (EN)"
-                        : "OLD TEMPLATE"}
+                    {templateType === "NEW" ? "NEW TEMPLATE" : "OLD TEMPLATE"}
                   </span>
                   <button type="button" className="btn btn-secondary btn-sm" onClick={resetForm}>
                     សម្អាតទម្រង់ (Reset)
@@ -1377,40 +1323,85 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
 
               <div className="total-bar">
                 <div>
-                  <div style={{ fontWeight: 700 }}>សរុបប្រាក់កក់ឧបករណ៍ដែលបានជ្រើសរើស៖</div>
-                  <div style={{ fontSize: "0.8rem", opacity: 0.9 }}>
-                    ចំនួនទឹកប្រាក់សរុបក្នុងតារាងឧបសម្ព័ន្ធ ០១ នឹងគណនាតាមចំនួនដែលបានជ្រើសរើសជាក់ស្តែង។
+                  <div style={{ fontWeight: 700 }}>សរុបប្រាក់កក់ឧបករណ៍ដែលបានជ្រើសរើស (Annex 1 Deposit Total)៖</div>
+                  <div style={{ fontSize: "0.82rem", opacity: 0.9 }}>
+                    ចំនួនទឹកប្រាក់សរុបក្នុងតារាងឧបសម្ព័ន្ធ ០១ នឹងគណនាតាមជម្រើសជាក់ស្តែង៖ {eqPrinter ? "$150 " : ""}{eqScale ? "+ $65 " : ""}{eqBasket ? "+ $35 " : ""}{!eqPrinter && !eqScale && !eqBasket ? "$0" : ""}
                   </div>
                 </div>
                 <div className="amount">USD ${eqTotal}</div>
               </div>
 
               {/* Action Buttons */}
-              <div className="btn-row">
+              <div style={{ marginTop: 24, display: "flex", flexDirection: "column", gap: 12 }}>
                 <button
                   type="button"
-                  className="btn btn-preview"
-                  disabled={previewLoading}
-                  onClick={handlePreview}
-                >
-                  {previewLoading ? "កំពុងរៀបចំការមើលឡើងវិញ..." : "មើលឡើងវិញ (Preview)"}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-pdf"
+                  className="btn"
+                  style={{
+                    background: "#E2424A",
+                    color: "#FFFFFF",
+                    padding: "13px 20px",
+                    fontSize: "1.02rem",
+                    fontWeight: 700,
+                    borderRadius: 8,
+                    border: "none",
+                    cursor: "pointer",
+                    boxShadow: "0 2px 8px rgba(226, 66, 74, 0.25)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 10,
+                  }}
                   disabled={generateLoading}
-                  onClick={() => handleGenerate("pdf")}
+                  onClick={() => handleGenerate("both")}
                 >
-                  {generateLoading ? "កំពុងបង្កើត..." : "បោះពុម្ភ ជា pdf (Export & Print PDF)"}
+                  {generateLoading ? "កំពុងបង្កើតកិច្ចសន្យា..." : "ទាញយកកិច្ចសន្យាទាំង ២ (Download Both: KH & EN .docx)"}
                 </button>
-                <button
-                  type="button"
-                  className="btn btn-docx"
-                  disabled={generateLoading}
-                  onClick={() => handleGenerate("docx")}
-                >
-                  {generateLoading ? "កំពុងបង្កើត..." : "ទាញយក Word (.docx)"}
-                </button>
+
+                <div className="btn-row" style={{ marginTop: 0 }}>
+                  <button
+                    type="button"
+                    className="btn btn-docx"
+                    disabled={generateLoading}
+                    onClick={() => handleGenerate("docx_kh")}
+                  >
+                    ទាញយក Word ខ្មែរ (.docx)
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-docx"
+                    disabled={generateLoading}
+                    onClick={() => handleGenerate("docx_en")}
+                  >
+                    Download English Word (.docx)
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-preview"
+                    disabled={previewLoading}
+                    onClick={handlePreview}
+                  >
+                    {previewLoading ? "កំពុងរៀបចំ..." : "មើលឡើងវិញ (Preview)"}
+                  </button>
+                </div>
+
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end", marginTop: 4 }}>
+                  <button
+                    type="button"
+                    className="btn btn-pdf btn-sm"
+                    disabled={generateLoading}
+                    onClick={() => handleGenerate("pdf_kh")}
+                  >
+                    បោះពុម្ភជា PDF ខ្មែរ
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-pdf btn-sm"
+                    disabled={generateLoading}
+                    onClick={() => handleGenerate("pdf_en")}
+                  >
+                    Export English PDF
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -1419,63 +1410,102 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
               <div className="card" style={{ marginTop: 20 }}>
                 <div className="section-title">
                   <span>មើលឡើងវិញនូវកិច្ចសន្យាដែលបានបំពេញ (Preview)</span>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    {previewData.preview_docx_base64 && (
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      style={{
+                        background: previewTab === "kh" ? "#E2424A" : "#FFFFFF",
+                        color: previewTab === "kh" ? "#FFFFFF" : "#E2424A",
+                        border: "1px solid #E2424A",
+                        fontWeight: 600,
+                      }}
+                      onClick={() => setPreviewTab("kh")}
+                    >
+                      ទម្រង់ខ្មែរ (Khmer)
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      style={{
+                        background: previewTab === "en" ? "#E2424A" : "#FFFFFF",
+                        color: previewTab === "en" ? "#FFFFFF" : "#E2424A",
+                        border: "1px solid #E2424A",
+                        fontWeight: 600,
+                      }}
+                      onClick={() => setPreviewTab("en")}
+                    >
+                      English Version
+                    </button>
+                    {previewData.preview_docx_base64_kh && (
                       <a
-                        href={previewData.preview_docx_base64}
-                        download={`PREVIEW_${contractNo}.docx`}
+                        href={previewData.preview_docx_base64_kh}
+                        download={`PREVIEW_${contractNo}_KH.docx`}
                         className="btn btn-docx btn-sm"
                       >
-                        ទាញយក .docx
+                        Word ខ្មែរ (.docx)
+                      </a>
+                    )}
+                    {previewData.preview_docx_base64_en && (
+                      <a
+                        href={previewData.preview_docx_base64_en}
+                        download={`PREVIEW_${contractNo}_EN.docx`}
+                        className="btn btn-docx btn-sm"
+                      >
+                        Word EN (.docx)
                       </a>
                     )}
                   </div>
                 </div>
-                <div
-                  style={{
-                    background: "#F3E8D2",
-                    border: "1px solid #e5d8be",
-                    borderRadius: 8,
-                    padding: 16,
-                    fontSize: "0.92rem",
-                  }}
-                >
-                  <div className="grid-2">
-                    <div>
-                      <strong>{contractLang === "en" ? "Contract No.:" : "លេខកិច្ចសន្យា៖"}</strong> {previewData.context.contract_no}
-                      <br />
-                      <strong>{contractLang === "en" ? "Effective Date:" : "កាលបរិច្ឆេទ៖"}</strong>{" "}
-                      {contractLang === "en"
-                        ? `${previewData.context.day}/${previewData.context.month}/${previewData.context.year}`
-                        : `ថ្ងៃទី ${previewData.context.day} ខែ ${previewData.context.month} ឆ្នាំ ${previewData.context.year}`}
-                      <br />
-                      <strong>{contractLang === "en" ? "Party A:" : "ភាគី ក (ក្នុងតួកិច្ចសន្យា)៖"}</strong>{" "}
-                      {contractLang === "en"
-                        ? `Represented by ${previewData.context.director_latin}, Branch Director of ${previewData.context.branch_province_en}`
-                        : `តំណាងដោយលោក ${previewData.context.director_body_name} នាយកសាខា ${previewData.context.branch_province_kh}`}
-                      <br />
-                      <strong>{contractLang === "en" ? "Party A Signature:" : "ហត្ថលេខាភាគី ក (២ កន្លែង)៖"}</strong> {previewData.context.director_latin}
+                {(() => {
+                  const ctx = previewTab === "en" ? (previewData.context_en || previewData.context) : (previewData.context_kh || previewData.context);
+                  const isEn = previewTab === "en";
+                  return (
+                    <div
+                      style={{
+                        background: "#F3E8D2",
+                        border: "1px solid #e5d8be",
+                        borderRadius: 8,
+                        padding: 16,
+                        fontSize: "0.92rem",
+                      }}
+                    >
+                      <div className="grid-2">
+                        <div>
+                          <strong>{isEn ? "Contract No.:" : "លេខកិច្ចសន្យា៖"}</strong> {ctx.contract_no}
+                          <br />
+                          <strong>{isEn ? "Effective Date:" : "កាលបរិច្ឆេទ៖"}</strong>{" "}
+                          {isEn
+                            ? `${ctx.day}/${ctx.month}/${ctx.year}`
+                            : `ថ្ងៃទី ${ctx.day} ខែ ${ctx.month} ឆ្នាំ ${ctx.year}`}
+                          <br />
+                          <strong>{isEn ? "Party A (Branch):" : "ភាគី ក (ក្នុងតួកិច្ចសន្យា)៖"}</strong>{" "}
+                          {isEn
+                            ? `Represented by ${ctx.director_latin}, Branch Director of ${ctx.branch_province_en}`
+                            : `តំណាងដោយលោក ${ctx.director_body_name} នាយកសាខា ${ctx.branch_province_kh}`}
+                          <br />
+                          <strong>{isEn ? "Party A Signature:" : "ហត្ថលេខាភាគី ក (២ កន្លែង)៖"}</strong> {ctx.director_latin}
+                          <br />
+                          <strong>{isEn ? "Deposit Total (Annex 1):" : "ប្រាក់កក់ឧបករណ៍សរុប (ឧបសម្ព័ន្ធ ០១)៖"}</strong>{" "}
+                          <span style={{ fontWeight: 700, color: "#E2424A" }}>{ctx.eq_deposit_sum}</span>
+                        </div>
+                        <div>
+                          <strong>{isEn ? "Party B Name:" : "ភាគី ខ (ឈ្មោះ)៖"}</strong>{" "}
+                          {isEn ? ctx.agent_name_latin || ctx.agent_name_kh : `${ctx.agent_name_kh} (${ctx.agent_name_latin})`}
+                          <br />
+                          <strong>{isEn ? "ID / Phone:" : "អត្តសញ្ញាណប័ណ្ណ / ទូរស័ព្ទ៖"}</strong> {ctx.id_number} / {ctx.phone}
+                          <br />
+                          <strong>{isEn ? "Address:" : "អាសយដ្ឋាន (ទាំង ២ កន្លែង)៖"}</strong> {ctx.address}
+                          <br />
+                          <strong>{isEn ? "Bank Account:" : "គណនីធនាគារ៖"}</strong> {ctx.bank_account_name} — {ctx.bank_account_no} ({ctx.bank_name})
+                          <br />
+                          <strong>{isEn ? "Equipment:" : "ឧបករណ៍ឧបសម្ព័ន្ធ ០១៖"}</strong>{" "}
+                          {isEn ? "Printer" : "ម៉ាស៊ីនព្រីន"} [{ctx.eq_printer}] | {isEn ? "Scale" : "ជញ្ជីង"} [{ctx.eq_scale}] | {isEn ? "Basket" : "កញ្ច្រែង"} [{ctx.eq_basket}]
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <strong>{contractLang === "en" ? "Party B Name:" : "ភាគី ខ (ឈ្មោះខ្មែរ / ឡាតាំង)៖"}</strong>{" "}
-                      {contractLang === "en"
-                        ? previewData.context.agent_name_latin || previewData.context.agent_name_kh
-                        : `${previewData.context.agent_name_kh} (${previewData.context.agent_name_latin})`}
-                      <br />
-                      <strong>{contractLang === "en" ? "ID / Phone:" : "អត្តសញ្ញាណប័ណ្ណ / ទូរស័ព្ទ៖"}</strong> {previewData.context.id_number} /{" "}
-                      {previewData.context.phone}
-                      <br />
-                      <strong>{contractLang === "en" ? "Address:" : "អាសយដ្ឋាន (ទាំង ២ កន្លែង)៖"}</strong> {previewData.context.address}
-                      <br />
-                      <strong>{contractLang === "en" ? "Bank Account:" : "គណនីធនាគារ៖"}</strong> {previewData.context.bank_account_name} —{" "}
-                      {previewData.context.bank_account_no} ({previewData.context.bank_name})<br />
-                      <strong>{contractLang === "en" ? "Appendix 01 Equipment:" : "ឧបករណ៍ឧបសម្ព័ន្ធ ០១៖"}</strong>{" "}
-                      {contractLang === "en" ? "Printer" : "ម៉ាស៊ីនព្រីន"} [
-                      {templateType === "OLD" ? (contractLang === "en" ? "Compulsory" : "ចាំបាច់") : previewData.context.eq_printer}] | {contractLang === "en" ? "Scale" : "ជញ្ជីង"} [
-                      {previewData.context.eq_scale}] | {contractLang === "en" ? "Basket" : "កញ្ច្រែង"} [{previewData.context.eq_basket}]
-                    </div>
-                  </div>
-                </div>
+                  );
+                })()}
               </div>
             )}
           </div>
