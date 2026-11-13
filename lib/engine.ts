@@ -111,8 +111,9 @@ export function buildTemplateContext(
     typeof payload.fixed_deposit === "number" && !Number.isNaN(payload.fixed_deposit)
       ? Math.max(0, payload.fixed_deposit)
       : 50;
-  const eqDepositTotal =
-    fixedDeposit + (eqPrinterBool ? 150 : 0) + (eqScaleBool ? 65 : 0) + (eqBasketBool ? 35 : 0);
+  const eqEquipmentTotal =
+    (eqPrinterBool ? 150 : 0) + (eqScaleBool ? 65 : 0) + (eqBasketBool ? 35 : 0);
+  const eqDepositTotal = fixedDeposit + eqEquipmentTotal;
 
   const companyCtx: Record<string, string> = {};
   for (const [key, defaultDots] of Object.entries(OLD_COMPANY_DOTS)) {
@@ -149,7 +150,7 @@ export function buildTemplateContext(
       : "☐",
     eq_scale: eqScaleBool ? "☑" : "☐",
     eq_basket: eqBasketBool ? "☑" : "☐",
-    eq_deposit_sum: `$${eqDepositTotal}`,
+    eq_deposit_sum: `$${eqEquipmentTotal}`,
     ...companyCtx,
   };
 

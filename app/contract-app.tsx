@@ -33,6 +33,7 @@ interface InitialData {
 
 export default function ContractApp({ initialData }: { initialData: InitialData }) {
   const [activeTab, setActiveTab] = useState<string>("home");
+  const [flowMode, setFlowMode] = useState<"NEW" | "OLD">("NEW");
   const [templateType, setTemplateType] = useState<"NEW" | "OLD">("NEW");
   const [contractLang, setContractLang] = useState<"kh" | "en">("kh");
 
@@ -318,6 +319,7 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
   };
 
   const openContractFlow = (type: "NEW" | "OLD", lang?: "kh" | "en") => {
+    setFlowMode(type);
     setTemplateType(type);
     if (lang) setContractLang(lang);
     setActiveTab("form");
@@ -337,6 +339,15 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
         setContractNo(b.next_contract_no || `${b.code}001`);
       }
     }
+  };
+
+  const switchTemplateType = (nextType: "NEW" | "OLD") => {
+    setTemplateType(nextType);
+    setDigitStyle(nextType === "OLD" ? settings.old_digit_style : settings.new_digit_style);
+    if (nextType === "OLD") {
+      setEqPrinter(true);
+    }
+    setPreviewData(null);
   };
 
   const fillFormFromAgent = (ag: Agent, closePopup = true) => {
@@ -812,11 +823,13 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
         {/* 2. CONTRACT FORM */}
         {activeTab === "form" && (
           <div>
-            {templateType === "OLD" && (
-              <div className="card" style={{ borderLeft: "5px solid #E2424A", marginBottom: 20 }}>
+            {flowMode === "OLD" && (
+              <div className="card" style={{ borderLeft: "4px solid var(--primary)", marginBottom: 20 }}>
                 <div className="section-title">
                   <span>ស្វែងរកទិន្នន័យភ្នាក់ងារចាស់ (Search Existing Agent Database)</span>
-                  <span className="badge badge-old">Flow B — ទម្រង់ចាស់ (old_km.docx)</span>
+                  <span className={`badge ${templateType === "OLD" ? "badge-old" : "badge-new"}`}>
+                    {templateType === "OLD" ? "ទម្រង់ចាស់ (Old Template)" : "ទម្រង់ថ្មី (New Template)"}
+                  </span>
                 </div>
                 <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
                   <input
@@ -888,7 +901,56 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
 
             {/* Section 1: Contract */}
             <div className="mini-card">
-              <div className="mini-card-title">Contract</div>
+              <div className="mini-card-title">
+                <span>Contract</span>
+                {flowMode === "OLD" && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: "0.82rem", fontWeight: 500, color: "#64748b" }}>
+                      ទម្រង់កិច្ចសន្យា (Template):
+                    </span>
+                    <div
+                      style={{
+                        display: "inline-flex",
+                        borderRadius: 8,
+                        border: "1px solid var(--border)",
+                        overflow: "hidden",
+                        background: "#f8fafc",
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => switchTemplateType("OLD")}
+                        style={{
+                          padding: "4px 12px",
+                          fontSize: "0.8rem",
+                          fontWeight: 600,
+                          border: "none",
+                          cursor: "pointer",
+                          background: templateType === "OLD" ? "var(--primary-gradient)" : "transparent",
+                          color: templateType === "OLD" ? "#ffffff" : "#475569",
+                        }}
+                      >
+                        Old (ចាស់)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => switchTemplateType("NEW")}
+                        style={{
+                          padding: "4px 12px",
+                          fontSize: "0.8rem",
+                          fontWeight: 600,
+                          border: "none",
+                          cursor: "pointer",
+                          background: templateType === "NEW" ? "var(--primary-gradient)" : "transparent",
+                          color: templateType === "NEW" ? "#ffffff" : "#475569",
+                        }}
+                      >
+                        New (ថ្មី)
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
               <div className="mini-card-body">
                 <div className="grid-2">
                   <div className="form-group">
@@ -1369,7 +1431,7 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
                   >
                     {generateLoading
                       ? "កំពុងបង្កើតកិច្ចសន្យា..."
-                      : "ទាញយកកិច្ចសន្យាទាំង ២ (Download Both: KH & EN .docx)"}
+                      : "ទាញយកកិច្ចសន្យាទាំង(Download docx)"}
                   </button>
 
                   <div className="btn-row" style={{ marginTop: 0 }}>
