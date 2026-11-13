@@ -107,9 +107,12 @@ export function buildTemplateContext(
   const eqScaleBool = Boolean(payload.eq_scale);
   const eqBasketBool = Boolean(payload.eq_basket);
 
+  const fixedDeposit =
+    typeof payload.fixed_deposit === "number" && !Number.isNaN(payload.fixed_deposit)
+      ? Math.max(0, payload.fixed_deposit)
+      : 50;
   const eqDepositTotal =
-    (eqPrinterBool ? 150 : 0) + (eqScaleBool ? 65 : 0) + (eqBasketBool ? 35 : 0);
-  const fixedDeposit = templateType === "NEW" ? 50 : 250;
+    fixedDeposit + (eqPrinterBool ? 150 : 0) + (eqScaleBool ? 65 : 0) + (eqBasketBool ? 35 : 0);
 
   const companyCtx: Record<string, string> = {};
   for (const [key, defaultDots] of Object.entries(OLD_COMPANY_DOTS)) {

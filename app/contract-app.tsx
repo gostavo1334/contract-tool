@@ -12,8 +12,14 @@ import {
   detectBranchFromCode,
   agentBranchCode,
   directorBodyName,
+  KHMER_TO_ENGLISH_PROVINCE,
 } from "@/lib/shared";
 import { composeKhmerAddress } from "@/lib/khmer";
+import gazetteerDataRaw from "@/lib/gazetteer.json";
+import { GazetteerType, findMatchingItem } from "@/lib/gazetteer";
+
+const gazetteerData: GazetteerType = gazetteerDataRaw;
+const PROVINCES_LIST = Object.keys(gazetteerData);
 
 interface InitialData {
   today: string;
@@ -51,6 +57,7 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
   const [agentId, setAgentId] = useState<number | null>(null);
 
   // Party B
+  const [agentTitle, setAgentTitle] = useState<string>("លោក");
   const [nameKh, setNameKh] = useState<string>("");
   const [nameLatin, setNameLatin] = useState<string>("");
   const [idNumber, setIdNumber] = useState<string>("");
@@ -58,6 +65,8 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
   const [email, setEmail] = useState<string>("");
 
   // Address
+  const [addressMode, setAddressMode] = useState<"dropdown" | "manual">("dropdown");
+  const [locationMatchesResidence, setLocationMatchesResidence] = useState<boolean>(true);
   const [houseNo, setHouseNo] = useState<string>("");
   const [street, setStreet] = useState<string>("");
   const [village, setVillage] = useState<string>("");
@@ -71,7 +80,8 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
   const [bankAccountName, setBankAccountName] = useState<string>("");
   const [bankAccountNo, setBankAccountNo] = useState<string>("");
 
-  // Equipment
+  // Equipment & Fixed Deposit
+  const [fixedDeposit, setFixedDeposit] = useState<number>(50);
   const [eqPrinter, setEqPrinter] = useState<boolean>(false);
   const [eqScale, setEqScale] = useState<boolean>(false);
   const [eqBasket, setEqBasket] = useState<boolean>(false);
@@ -175,6 +185,61 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
       commune: nextCommune,
       district: nextDistrict,
       province: nextProvince,
+    });
+  };
+
+  // Gazetteer address cascading
+  const matchedProvince = findMatchingItem(PROVINCES_LIST, province) || "";
+  const availableDistricts = matchedProvince
+    ? Object.keys(gazetteerData[matchedProvince]?.districts || {})
+    : [];
+  const matchedDistrict = findMatchingItem(availableDistricts, district) || "";
+  const availableCommunes = matchedProvince && matchedDistrict
+    ? Object.keys(gazetteerData[matchedProvince]?.districts?.[matchedDistrict]?.communes || {})
+    : [];
+  const matchedCommune = findMatchingItem(availableCommunes, commune) || "";
+  const availableVillages = matchedProvince && matchedDistrict && matchedCommune
+    ? (gazetteerData[matchedProvince]?.districts?.[matchedDistrict]?.communes?.[matchedCommune]?.villages || [])
+    : [];
+  const matchedVillage = findMatchingItem(availableVillages.map((v) => v.val), village) || "";
+
+  const handleProvinceSelect = (newProv: string) => {
+    setProvince(newProv);
+    setDistrict("");
+    setCommune("");
+    setVillage("");
+    syncAddressFull({
+      province: newProv,
+      district: "",
+      commune: "",
+      village: "",
+    });
+  };
+
+  const handleDistrictSelect = (newDist: string) => {
+    setDistrict(newDist);
+    setCommune("");
+    setVillage("");
+    syncAddressFull({
+      district: newDist,
+      commune: "",
+      village: "",
+    });
+  };
+
+  const handleCommuneSelect = (newComm: string) => {
+    setCommune(newComm);
+    setVillage("");
+    syncAddressFull({
+      commune: newComm,
+      village: "",
+    });
+  };
+
+  const handleVillageSelect = (newVil: string) => {
+    setVillage(newVil);
+    syncAddressFull({
+      village: newVil,
     });
   };
 
@@ -343,6 +408,7 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
     setEqPrinter(templateType === "OLD");
     setEqScale(false);
     setEqBasket(false);
+    setFixedDeposit(50);
 
     const b = branches.find((x) => x.code === branchCode) || branches[0];
     if (b) {
@@ -426,6 +492,7 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
       eq_printer: eqPrinter,
       eq_scale: eqScale,
       eq_basket: eqBasket,
+      fixed_deposit: Number.isFinite(fixedDeposit) ? Math.max(0, fixedDeposit) : 0,
       company_name: companyName,
       company_law: companyLaw,
       company_reg_no: companyRegNo,
@@ -648,9 +715,13 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
 
   // Calculated equipment total
   const eqTotal =
+    (Number.isFinite(fixedDeposit) ? Math.max(0, fixedDeposit) : 0) +
     (eqPrinter ? EQUIPMENT_PRICES.printer : 0) +
     (eqScale ? EQUIPMENT_PRICES.scale : 0) +
     (eqBasket ? EQUIPMENT_PRICES.basket : 0);
+
+  // Current selected branch
+  const currentBranch = branches.find((b) => b.code === branchCode);
 
   // Popup agent filter
   const activeBranch = branchCode.toUpperCase();
@@ -681,18 +752,6 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
               onClick={() => setActiveTab("home")}
             >
               ទំព័រដើម
-            </button>
-            <button
-              className={`nav-btn ${activeTab === "form" && templateType === "NEW" ? "active" : ""}`}
-              onClick={() => openContractFlow("NEW")}
-            >
-              ភ្នាក់ងារថ្មី (New)
-            </button>
-            <button
-              className={`nav-btn ${activeTab === "form" && templateType === "OLD" ? "active" : ""}`}
-              onClick={() => openContractFlow("OLD")}
-            >
-              ភ្នាក់ងារចាស់ (Old)
             </button>
             <button
               className={`nav-btn ${activeTab === "branches" ? "active" : ""}`}
@@ -817,377 +876,318 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
               </div>
             )}
 
-            <div className="card">
-              <div className="section-title">
-                <span>
-                  {templateType === "NEW"
-                    ? "បង្កើតកិច្ចសន្យាភ្នាក់ងារថ្មី (New Agent Contract)"
-                    : "បោះពុម្ភកិច្ចសន្យាភ្នាក់ងារចាស់ឡើងវិញ (Reprint Old Agent Contract)"}
-                </span>
-                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                  <span className={`badge ${templateType === "NEW" ? "badge-new" : "badge-old"}`}>
-                    {templateType === "NEW" ? "NEW TEMPLATE" : "OLD TEMPLATE"}
-                  </span>
-                  <button type="button" className="btn btn-secondary btn-sm" onClick={resetForm}>
-                    សម្អាតទម្រង់ (Reset)
-                  </button>
-                </div>
-              </div>
+            {/* Header matching Image 1: Agent Contract Generator មុខងារបង្កើតកិច្ចសន្យាជាមួយភ្នាក់ងារ */}
+            <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 20 }}>
+              <h2 style={{ fontSize: 24, fontWeight: 700, margin: 0, color: "#1e293b", letterSpacing: "-0.02em" }}>
+                Agent Contract Generator
+              </h2>
+              <span style={{ fontSize: 16, color: "#64748b", fontWeight: 500 }}>
+                មុខងារបង្កើតកិច្ចសន្យាជាមួយភ្នាក់ងារ
+              </span>
+            </div>
 
-              {/* Header: Branch, Contract No, Date */}
-              <div className="grid-3">
-                <div className="form-group">
-                  <label>
-                    ជ្រើសរើសសាខា (Branch) <span className="req">*</span>
-                  </label>
-                  <select value={branchCode} onChange={(e) => onBranchChange(e.target.value)}>
-                    {branches.map((b) => (
-                      <option key={b.code} value={b.code}>
-                        {b.code} — {b.province_kh} ({directorBodyName(b)})
-                      </option>
-                    ))}
-                  </select>
-                  <span className="hint">បំពេញឈ្មោះនាយកសាខា និងខេត្តដោយស្វ័យប្រវត្តិ</span>
-                </div>
-
-                <div className="form-group">
-                  <label>
-                    លេខកិច្ចសន្យា (Contract No. / កូដភ្នាក់ងារ Agent Code) <span className="req">*</span>
-                  </label>
-                  <div className="agent-code-wrapper">
-                    <div style={{ display: "flex", gap: 6 }}>
-                      <input
-                        type="text"
-                        value={contractNo}
-                        placeholder="ឧ. MONA011 ឬ PNPA010"
-                        onFocus={() => {
-                          if (templateType === "OLD") setPopupOpen(true);
-                        }}
-                        onChange={(e) => onContractNoChange(e.target.value)}
-                      />
-                      {templateType === "OLD" && agents.length > 0 && (
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-sm"
-                          onClick={() => setPopupOpen(!popupOpen)}
-                        >
-                          ▼
-                        </button>
-                      )}
-                    </div>
-
-                    {popupOpen && (
-                      <div className="agent-code-popup">
-                        <div
-                          style={{
-                            padding: "8px 12px",
-                            background: "#F3E8D2",
-                            borderBottom: "1px solid #e5d8be",
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            fontSize: "0.8rem",
-                            color: "#E2424A",
-                            fontWeight: 600,
-                          }}
-                        >
-                          <span>
-                            {showAllPopupBranches
-                              ? `គ្រប់សាខាទាំងអស់ (${filteredPopupAgents.length} ភ្នាក់ងារ)`
-                              : `សាខា ${branchCode} (${filteredPopupAgents.length} ភ្នាក់ងារ)`}
-                          </span>
-                          <button
-                            type="button"
-                            className="btn btn-secondary btn-sm"
-                            style={{ padding: "2px 8px", fontSize: "0.74rem" }}
-                            onClick={() => setShowAllPopupBranches(!showAllPopupBranches)}
-                          >
-                            {showAllPopupBranches ? `បង្ហាញតាមសាខា ${branchCode}` : "បង្ហាញគ្រប់សាខា"}
-                          </button>
-                        </div>
-                        {filteredPopupAgents.length === 0 ? (
-                          <div style={{ padding: "10px 12px", color: "#64748b", fontSize: "0.85rem" }}>
-                            មិនមានភ្នាក់ងារត្រូវនឹងទិន្នន័យនេះទេ
-                          </div>
-                        ) : (
-                          filteredPopupAgents.map((ag) => (
-                            <div
-                              key={ag.id}
-                              className="agent-code-option"
-                              onClick={() => fillFormFromAgent(ag, true)}
-                            >
-                              <div>
-                                <span className="badge badge-old" style={{ marginRight: 4 }}>
-                                  {ag.agent_code || "-"}
-                                </span>
-                                <strong>{ag.name_kh}</strong>{" "}
-                                <span style={{ color: "#475569" }}>({ag.name_latin || ""})</span>
-                                <div style={{ fontSize: "0.78rem", color: "#64748b" }}>
-                                  ទូរស័ព្ទ៖ {ag.phone || "-"} | ID៖ {ag.id_number || "-"}
-                                </div>
-                              </div>
-                              <span className="btn btn-docx btn-sm" style={{ padding: "3px 8px" }}>
-                                ជ្រើសរើស
-                              </span>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  <span className="hint">ប្រើកូដភ្នាក់ងារ (Agent Code) ជាលេខកិច្ចសន្យា</span>
-                </div>
-
-                <div className="form-group">
-                  <label>
-                    កាលបរិច្ឆេទ (Date dd/mm/yyyy) <span className="req">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={contractDate}
-                    placeholder="dd/mm/yyyy"
-                    onChange={(e) => setContractDate(e.target.value)}
-                  />
-                  <span className="hint">{datePreview || "ថ្ងៃទី ... ខែ ... ឆ្នាំ ..."}</span>
-                </div>
-              </div>
-
-              {/* Party A Banner */}
-              <div className="party-a-banner">
-                <div>
-                  <strong>ភាគី “ក” (ក្នុងតួកិច្ចសន្យា)៖</strong> តំណាងដោយលោក{" "}
-                  <strong>{selectedBranchObj ? directorBodyName(selectedBranchObj) : "-"}</strong> | នាយកសាខា{" "}
-                  <strong>{selectedBranchObj?.province_kh || "-"}</strong>
-                </div>
-                <div>
-                  <strong>ហត្ថលេខាភាគី “ក” (២ កន្លែង)៖</strong> ឈ្មោះ៖{" "}
-                  <strong>{selectedBranchObj?.director_latin || "-"}</strong>
-                </div>
-                <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
-                  <label style={{ fontSize: "0.84rem", fontWeight: 600 }}>ទម្រង់លេខ៖</label>
-                  <select
-                    value={digitStyle}
-                    style={{ width: "auto", padding: "4px 8px", fontSize: "0.84rem" }}
-                    onChange={(e) => setDigitStyle(e.target.value as any)}
-                  >
-                    <option value="khmer">លេខខ្មែរ (០១២៣៤៥៦៧៨៩)</option>
-                    <option value="latin">លេខឡាតាំង (0123456789)</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Party B */}
-              <h3 className="section-title" style={{ marginTop: 24 }}>
-                ព័ត៌មាន ភាគី “ខ” (Party B — Agent Information)
-              </h3>
-              <div className="grid-2">
-                <div className="form-group">
-                  <label>
-                    ១. ឈ្មោះពេញ (អក្សរខ្មែរ) <span className="req">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={nameKh}
-                    placeholder="ឧ. ប៉ា ចំរើន"
-                    onChange={(e) => onKhmerNameChange(e.target.value)}
-                  />
-                  <span className="hint">បង្ហាញក្នុងតួកិច្ចសន្យា និងកន្លែងចុះហត្ថលេខាភាគី “ខ”</span>
-                </div>
-                <div className="form-group">
-                  <label>
-                    ២. ឈ្មោះពេញ (អក្សរឡាតាំង) <span className="req">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={nameLatin}
-                    placeholder="ឧ. Pa Chamroun"
-                    onChange={(e) => {
-                      latinManuallyEdited.current = true;
-                      setNameLatin(e.target.value);
-                      if (!bankAccountManuallyEdited.current) setBankAccountName(e.target.value);
-                    }}
-                  />
-                  <span className="hint">បង្កើតស្វ័យប្រវត្តិពីឈ្មោះខ្មែរ និងអាចកែប្រែបាន</span>
-                </div>
-              </div>
-
-              <div className="grid-3" style={{ marginTop: 14 }}>
-                <div className="form-group">
-                  <label>
-                    ៣. លេខអត្តសញ្ញាណប័ណ្ណ <span className="req">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={idNumber}
-                    placeholder="ឧ. 230067812"
-                    onChange={(e) => setIdNumber(e.target.value)}
-                  />
-                </div>
-                <div className="form-group">
-                  <label>
-                    ៤. លេខទូរស័ព្ទ <span className="req">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={phone}
-                    placeholder="ឧ. 060363691"
-                    onChange={(e) => setPhone(e.target.value)}
-                  />
-                </div>
-                {templateType === "OLD" && (
+            {/* Section 1: Contract */}
+            <div className="mini-card">
+              <div className="mini-card-title">Contract</div>
+              <div className="mini-card-body">
+                <div className="grid-2">
                   <div className="form-group">
-                    <label>អ៊ីម៉ែល (Email)</label>
+                    <label>Contract number</label>
                     <input
                       type="text"
-                      value={email}
-                      placeholder="ឧ. skan1711@gmail.com"
-                      onChange={(e) => setEmail(e.target.value)}
+                      value={contractNo}
+                      onChange={(e) => onContractNoChange(e.target.value)}
+                      placeholder="ឧ. PURA019"
                     />
                   </div>
-                )}
+                  <div className="form-group">
+                    <label>Signing / effective date</label>
+                    <input
+                      type="text"
+                      value={contractDate}
+                      onChange={(e) => setContractDate(e.target.value)}
+                      placeholder="DD/MM/YYYY ឬ YYYY-MM-DD"
+                    />
+                  </div>
+                </div>
+                <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, fontSize: "0.85rem", color: "#64748b" }}>
+                  <div>
+                    <strong>Branch:</strong> {currentBranch ? (KHMER_TO_ENGLISH_PROVINCE[currentBranch.province_kh] || currentBranch.code) : branchCode} / {currentBranch?.province_kh || ""} — <strong>Director:</strong> {currentBranch ? directorBodyName(currentBranch) : "-"}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span>ជ្រើសរើសសាខា៖</span>
+                    <select
+                      value={branchCode}
+                      onChange={(e) => onBranchChange(e.target.value)}
+                      style={{ padding: "4px 8px", fontSize: "0.82rem", width: "auto" }}
+                    >
+                      {branches.map((b) => (
+                        <option key={b.code} value={b.code}>
+                          {b.code} — {b.province_kh}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
               </div>
+            </div>
 
-              {/* Address */}
-              <h3 className="section-title" style={{ marginTop: 24 }}>
-                ៥. អាសយដ្ឋាន (បំពេញម្តង ចម្លងទៅទាំងលំនៅឋាន និងចំណុចចុះបញ្ជី)
-              </h3>
-              <div className="grid-3">
-                <div className="form-group">
-                  <label>ផ្ទះលេខ</label>
-                  <input
-                    type="text"
-                    value={houseNo}
-                    placeholder="ឧ. 12"
-                    onChange={(e) => handleAddressPartChange("houseNo", e.target.value)}
-                  />
+            {/* Section 2: ព័ត៌មានសម្គាល់ភ្នាក់ងារ (ភាគី ខ) */}
+            <div className="mini-card">
+              <div className="mini-card-title">ព័ត៌មានសម្គាល់ភ្នាក់ងារ (ភាគី ខ)</div>
+              <div className="mini-card-body">
+                <div style={{ display: "grid", gridTemplateColumns: "110px 1fr 1fr", gap: 14 }}>
+                  <div className="form-group">
+                    <label>ងារ</label>
+                    <select value={agentTitle} onChange={(e) => setAgentTitle(e.target.value)}>
+                      <option value="លោក">លោក</option>
+                      <option value="លោកស្រី">លោកស្រី</option>
+                      <option value="អ្នកនាង">អ្នកនាង</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>ឈ្មោះជាអក្សរខ្មែរ <span className="req">*</span></label>
+                    <input
+                      type="text"
+                      value={nameKh}
+                      placeholder="ឧ. ប៉ា ចំរើន"
+                      onChange={(e) => onKhmerNameChange(e.target.value)}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>ឈ្មោះជាអក្សរឡាតាំង <span className="req">*</span></label>
+                    <input
+                      type="text"
+                      value={nameLatin}
+                      placeholder="ឧ. Pa Chamroun"
+                      onChange={(e) => {
+                        latinManuallyEdited.current = true;
+                        setNameLatin(e.target.value);
+                      }}
+                    />
+                  </div>
                 </div>
-                <div className="form-group">
-                  <label>ផ្លូវ</label>
-                  <input
-                    type="text"
-                    value={street}
-                    placeholder="ឧ. ៧៦"
-                    onChange={(e) => handleAddressPartChange("street", e.target.value)}
-                  />
-                </div>
-                <div className="form-group">
-                  <label>
-                    ភូមិ <span className="req">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={village}
-                    placeholder="ឧ. ពូហ្យាម"
-                    onChange={(e) => handleAddressPartChange("village", e.target.value)}
-                  />
-                </div>
-                <div className="form-group">
-                  <label>
-                    ឃុំ / សង្កាត់ <span className="req">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={commune}
-                    placeholder="ឧ. សែនមនោរម្យ"
-                    onChange={(e) => handleAddressPartChange("commune", e.target.value)}
-                  />
-                </div>
-                <div className="form-group">
-                  <label>
-                    ស្រុក / ក្រុង / ខណ្ឌ <span className="req">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={district}
-                    placeholder="ឧ. អូរាំង"
-                    onChange={(e) => handleAddressPartChange("district", e.target.value)}
-                  />
-                </div>
-                <div className="form-group">
-                  <label>
-                    រាជធានី / ខេត្ត <span className="req">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={province}
-                    placeholder="ឧ. មណ្ឌលគិរី"
-                    onChange={(e) => handleAddressPartChange("province", e.target.value)}
-                  />
+                <div className="grid-2" style={{ marginTop: 14 }}>
+                  <div className="form-group">
+                    <label>លេខអត្តសញ្ញាណប័ណ្ណ <span className="req">*</span></label>
+                    <input
+                      type="text"
+                      value={idNumber}
+                      placeholder="ឧ. 230067812"
+                      onChange={(e) => setIdNumber(e.target.value)}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>លេខទូរស័ព្ទ <span className="req">*</span></label>
+                    <input
+                      type="text"
+                      value={phone}
+                      placeholder="ឧ. 060363691"
+                      onChange={(e) => setPhone(e.target.value)}
+                    />
+                  </div>
                 </div>
               </div>
-              <div className="form-group" style={{ marginTop: 12 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                  <label style={{ margin: 0 }}>
-                    អាសយដ្ឋានពេញលេញក្នុងកិច្ចសន្យា (អាចកែសម្រួលផ្ទាល់បាន) <span className="req">*</span>
-                  </label>
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    style={{ padding: "3px 10px", fontSize: "0.8rem", cursor: "pointer" }}
-                    onClick={() => syncAddressFull()}
-                    title="បំពេញអាសយដ្ឋានពេញលេញឡើងវិញពីប្រអប់ទាំង ៦ ខាងលើ"
-                  >
-                    បំពេញស្វ័យប្រវត្តិ (Auto-fill)
-                  </button>
-                </div>
-                <input
-                  type="text"
-                  value={addressFull}
-                  placeholder="ផ្លូវ... ភូមិ... ឃុំ... ស្រុក... ខេត្ត..."
-                  onChange={(e) => {
-                    addressManuallyEdited.current = true;
-                    setAddressFull(e.target.value);
-                  }}
-                />
-              </div>
+            </div>
 
-              {/* Bank Info */}
-              <h3 className="section-title" style={{ marginTop: 24 }}>
-                ៦. ព័ត៌មានធនាគារ (Bank Account Information)
-              </h3>
-              <div className="grid-3">
-                <div className="form-group">
-                  <label>
-                    ឈ្មោះធនាគារ (Bank Name) <span className="req">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={bankName}
-                    onChange={(e) => setBankName(e.target.value)}
-                  />
+            {/* Section 3: អាសយដ្ឋានទីលំនៅ */}
+            <div className="mini-card">
+              <div className="mini-card-title">អាសយដ្ឋានទីលំនៅ</div>
+              <div className="mini-card-body">
+                <div className="grid-3">
+                  <div className="form-group">
+                    <label>Province</label>
+                    <select
+                      value={matchedProvince}
+                      onChange={(e) => handleProvinceSelect(e.target.value)}
+                    >
+                      <option value="">-- ជ្រើសរើស Province --</option>
+                      {PROVINCES_LIST.map((p) => {
+                        const enName = gazetteerData[p]?.en || p;
+                        return (
+                          <option key={p} value={p}>
+                            {p} ({enName})
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>District / Khan / Krong</label>
+                    <select
+                      value={matchedDistrict}
+                      disabled={!matchedProvince}
+                      onChange={(e) => handleDistrictSelect(e.target.value)}
+                    >
+                      <option value="">
+                        {matchedProvince ? "-- ជ្រើសរើស District --" : "-- សូមជ្រើសរើសខេត្តជាមុន --"}
+                      </option>
+                      {availableDistricts.map((d) => {
+                        const distEn = gazetteerData[matchedProvince]?.districts?.[d]?.en || d;
+                        return (
+                          <option key={d} value={d}>
+                            {d} ({distEn})
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>Commune / Sangkat</label>
+                    <select
+                      value={matchedCommune}
+                      disabled={!matchedDistrict}
+                      onChange={(e) => handleCommuneSelect(e.target.value)}
+                    >
+                      <option value="">
+                        {matchedDistrict ? "-- ជ្រើសរើស Commune --" : "-- សូមជ្រើសរើសស្រុកជាមុន --"}
+                      </option>
+                      {availableCommunes.map((c) => {
+                        const comEn = gazetteerData[matchedProvince]?.districts?.[matchedDistrict]?.communes?.[c]?.en || c;
+                        return (
+                          <option key={c} value={c}>
+                            {c} ({comEn})
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
                 </div>
-                <div className="form-group">
-                  <label>
-                    ឈ្មោះគណនីធនាគារ (អក្សរឡាតាំង) <span className="req">*</span>
-                  </label>
+
+                <div className="grid-3" style={{ marginTop: 14 }}>
+                  <div className="form-group">
+                    <label>Village</label>
+                    <select
+                      value={matchedVillage}
+                      disabled={!matchedCommune}
+                      onChange={(e) => handleVillageSelect(e.target.value)}
+                    >
+                      <option value="">
+                        {matchedCommune ? "-- ជ្រើសរើស Village --" : "-- សូមជ្រើសរើសឃុំជាមុន --"}
+                      </option>
+                      {availableVillages.map((v) => (
+                        <option key={v.val} value={v.val}>
+                          {v.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>House number (optional)</label>
+                    <input
+                      type="text"
+                      value={houseNo}
+                      placeholder="ឧ. 12"
+                      onChange={(e) => handleAddressPartChange("houseNo", e.target.value)}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Street (optional)</label>
+                    <input
+                      type="text"
+                      value={street}
+                      placeholder="ឧ. ៧៦"
+                      onChange={(e) => handleAddressPartChange("street", e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Section 4: អាសយដ្ឋានទីតាំងភ្នាក់ងារ */}
+            <div className="mini-card">
+              <div className="mini-card-title">អាសយដ្ឋានទីតាំងភ្នាក់ងារ</div>
+              <div className="mini-card-body">
+                <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginBottom: 12 }}>
                   <input
-                    type="text"
-                    value={bankAccountName}
-                    placeholder="ឧ. Pa Chamroun"
+                    type="checkbox"
+                    checked={locationMatchesResidence}
                     onChange={(e) => {
-                      bankAccountManuallyEdited.current = true;
-                      setBankAccountName(e.target.value);
+                      setLocationMatchesResidence(e.target.checked);
+                      if (e.target.checked) {
+                        addressManuallyEdited.current = false;
+                        syncAddressFull();
+                      }
+                    }}
+                    style={{ width: 17, height: 17, cursor: "pointer" }}
+                  />
+                  <span style={{ fontSize: "0.92rem", fontWeight: 500, color: "#1e293b" }}>
+                    អាសយដ្ឋានទីតាំងភ្នាក់ងារ គឺជាអាសយដ្ឋានទីលំនៅផ្ទាល់
+                  </span>
+                </label>
+                <div className="form-group">
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                    <label style={{ margin: 0 }}>
+                      អាសយដ្ឋានពេញលេញក្នុងកិច្ចសន្យា (អាចកែសម្រួលផ្ទាល់បាន) <span className="req">*</span>
+                    </label>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      style={{ padding: "3px 10px", fontSize: "0.8rem", cursor: "pointer" }}
+                      onClick={() => syncAddressFull()}
+                      title="បំពេញអាសយដ្ឋានពេញលេញឡើងវិញពីប្រអប់ទាំង ៦ ខាងលើ"
+                    >
+                      បំពេញស្វ័យប្រវត្តិ (Auto-fill)
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    value={addressFull}
+                    placeholder="ផ្លូវ... ភូមិ... ឃុំ... ស្រុក... ខេត្ត..."
+                    onChange={(e) => {
+                      addressManuallyEdited.current = true;
+                      setAddressFull(e.target.value);
                     }}
                   />
                 </div>
-                <div className="form-group">
-                  <label>
-                    លេខគណនីធនាគារ <span className="req">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={bankAccountNo}
-                    placeholder="ឧ. 060363691"
-                    onChange={(e) => setBankAccountNo(e.target.value)}
-                  />
+              </div>
+            </div>
+
+            {/* Section 5: Bank */}
+            <div className="mini-card">
+              <div className="mini-card-title">Bank</div>
+              <div className="mini-card-body">
+                <div className="grid-3">
+                  <div className="form-group">
+                    <label>ព័ត៌មានធនាគារ (គប្បីប្រើ eMoney)</label>
+                    <input
+                      type="text"
+                      value={bankName}
+                      placeholder="eMoney / អ៊ីម៉ាន់នី"
+                      onChange={(e) => setBankName(e.target.value)}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>លេខកុង</label>
+                    <input
+                      type="text"
+                      value={bankAccountNo}
+                      placeholder="ឧ. 0889158332"
+                      onChange={(e) => setBankAccountNo(e.target.value)}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>ឈ្មោះម្ចាស់កុង</label>
+                    <input
+                      type="text"
+                      value={bankAccountName}
+                      placeholder="ឧ. Pa Chamroun"
+                      onChange={(e) => {
+                        bankAccountManuallyEdited.current = true;
+                        setBankAccountName(e.target.value);
+                      }}
+                    />
+                  </div>
                 </div>
               </div>
+            </div>
 
-              {/* Company Section for Old Template */}
-              {templateType === "OLD" && (
-                <details className="company-collapse">
-                  <summary>ព័ត៌មានក្រុមហ៊ុន (សម្រាប់ទម្រង់ចាស់ប៉ុណ្ណោះ — ទុកទទេដើម្បីរក្សាចំណុច ..... ដើម)</summary>
-                  <div className="grid-3" style={{ marginTop: 10 }}>
+            {/* Section 6 (Optional): Company Information for Old Template */}
+            {templateType === "OLD" && (
+              <div className="mini-card">
+                <div className="mini-card-title">ព័ត៌មានក្រុមហ៊ុន (Company Information - ភាគី ខ)</div>
+                <div className="mini-card-body">
+                  <div className="grid-3">
                     <div className="form-group">
                       <label>ឈ្មោះក្រុមហ៊ុន</label>
                       <input
@@ -1243,164 +1243,180 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
                       />
                     </div>
                   </div>
-                </details>
-              )}
-
-              {/* Deposit & Equipment */}
-              <h3 className="section-title" style={{ marginTop: 24 }}>
-                ៧. ប្រាក់កក់ធានា និង ឧបករណ៍ប្រើប្រាស់ (ឧបសម្ព័ន្ធ ០១)
-              </h3>
-              <div
-                style={{
-                  background: "#F3E8D2",
-                  border: "1px solid #e5d8be",
-                  padding: "10px 14px",
-                  borderRadius: 8,
-                  marginBottom: 14,
-                  fontSize: "0.9rem",
-                }}
-              >
-                <strong style={{ color: "#E2424A" }}>
-                  ប្រាក់កក់ថេរសម្រាប់ការធានា (ប្រការ ៣.៧)៖{" "}
-                  {templateType === "NEW" ? "USD ៥០ ($50)" : "USD 250 ($250)"}
-                </strong>{" "}
-                — ជាអត្ថបទថេរនៅក្នុងទម្រង់កិច្ចសន្យា
+                </div>
               </div>
+            )}
 
-              <label className={`eq-box ${eqPrinter ? "checked" : ""}`}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <input
-                    type="checkbox"
-                    checked={eqPrinter}
-                    disabled={templateType === "OLD"}
-                    onChange={(e) => setEqPrinter(e.target.checked)}
-                  />
-                  <div>
-                    <div style={{ fontWeight: 700 }}>
-                      ១. ម៉ាស៊ីនព្រីនបុង — Xprinter XP-DT427B thermal printer (WiFi)
-                    </div>
-                    <div className="hint">
-                      {templateType === "OLD"
-                        ? "ចាំបាច់ (Mandatory ក្នុងទម្រង់ចាស់ — រក្សាទុកពាក្យ «ចាំបាច់» ក្នុងតារាង)"
-                        : "គូសធីកក្នុងតារាងឧបសម្ព័ន្ធ ០១"}
-                    </div>
-                  </div>
-                </div>
-                <span className="price-badge">USD 150</span>
-              </label>
-
-              <label className={`eq-box ${eqScale ? "checked" : ""}`}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <input
-                    type="checkbox"
-                    checked={eqScale}
-                    onChange={(e) => setEqScale(e.target.checked)}
-                  />
-                  <div>
-                    <div style={{ fontWeight: 700 }}>២. ជញ្ជីង — 30 kg mechanical scale</div>
-                    <div className="hint">គូសធីកក្នុងតារាងឧបសម្ព័ន្ធ ០១</div>
-                  </div>
-                </div>
-                <span className="price-badge">USD 65</span>
-              </label>
-
-              <label className={`eq-box ${eqBasket ? "checked" : ""}`}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <input
-                    type="checkbox"
-                    checked={eqBasket}
-                    onChange={(e) => setEqBasket(e.target.checked)}
-                  />
-                  <div>
-                    <div style={{ fontWeight: 700 }}>
-                      ៣. កញ្ច្រែង — Delivery plastic basket (780*500*430)
-                    </div>
-                    <div className="hint">គូសធីកក្នុងតារាងឧបសម្ព័ន្ធ ០១</div>
-                  </div>
-                </div>
-                <span className="price-badge">USD 35</span>
-              </label>
-
-              <div className="total-bar">
-                <div>
-                  <div style={{ fontWeight: 700 }}>សរុបប្រាក់កក់ឧបករណ៍ដែលបានជ្រើសរើស (Annex 1 Deposit Total)៖</div>
-                  <div style={{ fontSize: "0.82rem", opacity: 0.9 }}>
-                    ចំនួនទឹកប្រាក់សរុបក្នុងតារាងឧបសម្ព័ន្ធ ០១ នឹងគណនាតាមជម្រើសជាក់ស្តែង៖ {eqPrinter ? "$150 " : ""}{eqScale ? "+ $65 " : ""}{eqBasket ? "+ $35 " : ""}{!eqPrinter && !eqScale && !eqBasket ? "$0" : ""}
-                  </div>
-                </div>
-                <div className="amount">USD ${eqTotal}</div>
-              </div>
-
-              {/* Action Buttons */}
-              <div style={{ marginTop: 24, display: "flex", flexDirection: "column", gap: 12 }}>
-                <button
-                  type="button"
-                  className="btn"
+            {/* Section 7: សម្ភារៈផ្តល់ និងប្រាក់កក់ */}
+            <div className="mini-card">
+              <div className="mini-card-title">សម្ភារៈផ្តល់ និងប្រាក់កក់</div>
+              <div className="mini-card-body">
+                <div
+                  className="eq-box"
                   style={{
-                    background: "#E2424A",
-                    color: "#FFFFFF",
-                    padding: "13px 20px",
-                    fontSize: "1.02rem",
-                    fontWeight: 700,
-                    borderRadius: 8,
-                    border: "none",
-                    cursor: "pointer",
-                    boxShadow: "0 2px 8px rgba(226, 66, 74, 0.25)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 10,
+                    background: "#f8fafc",
+                    border: "1px solid var(--border)",
+                    cursor: "default",
+                    marginBottom: 12,
                   }}
-                  disabled={generateLoading}
-                  onClick={() => handleGenerate("both")}
                 >
-                  {generateLoading ? "កំពុងបង្កើតកិច្ចសន្យា..." : "ទាញយកកិច្ចសន្យាទាំង ២ (Download Both: KH & EN .docx)"}
-                </button>
-
-                <div className="btn-row" style={{ marginTop: 0 }}>
-                  <button
-                    type="button"
-                    className="btn btn-docx"
-                    disabled={generateLoading}
-                    onClick={() => handleGenerate("docx_kh")}
-                  >
-                    ទាញយក Word ខ្មែរ (.docx)
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-docx"
-                    disabled={generateLoading}
-                    onClick={() => handleGenerate("docx_en")}
-                  >
-                    Download English Word (.docx)
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-preview"
-                    disabled={previewLoading}
-                    onClick={handlePreview}
-                  >
-                    {previewLoading ? "កំពុងរៀបចំ..." : "មើលឡើងវិញ (Preview)"}
-                  </button>
+                  <div>
+                    <div style={{ fontWeight: 600, color: "#0f172a" }}>
+                      ប្រាក់កក់ថេរសម្រាប់ការធានា (ប្រការ ៣.៧)
+                    </div>
+                    <div className="hint" style={{ marginTop: 2 }}>
+                      លំនាំដើម USD 50 ($50) — អាចកែសម្រួលចំនួនទឹកប្រាក់បាន និងបូកបញ្ចូលក្នុងសរុប
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ fontWeight: 700, color: "#475569" }}>$</span>
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={fixedDeposit}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        setFixedDeposit(Number.isNaN(val) ? 0 : Math.max(0, val));
+                      }}
+                      style={{
+                        width: 96,
+                        textAlign: "right",
+                        fontWeight: 700,
+                        padding: "6px 10px",
+                      }}
+                    />
+                  </div>
                 </div>
 
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end", marginTop: 4 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <label className={`eq-box ${eqPrinter ? "checked" : ""}`}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <input
+                        type="checkbox"
+                        checked={eqPrinter}
+                        disabled={templateType === "OLD"}
+                        onChange={(e) => setEqPrinter(e.target.checked)}
+                      />
+                      <div>
+                        <div style={{ fontWeight: 600 }}>
+                          Xprinter XP-DT427B thermal printer (WiFi)
+                        </div>
+                      </div>
+                    </div>
+                    <span className="price-badge">$150</span>
+                  </label>
+
+                  <label className={`eq-box ${eqScale ? "checked" : ""}`}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <input
+                        type="checkbox"
+                        checked={eqScale}
+                        onChange={(e) => setEqScale(e.target.checked)}
+                      />
+                      <div>
+                        <div style={{ fontWeight: 600 }}>
+                          30 kg mechanical scale
+                        </div>
+                      </div>
+                    </div>
+                    <span className="price-badge">$65</span>
+                  </label>
+
+                  <label className={`eq-box ${eqBasket ? "checked" : ""}`}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <input
+                        type="checkbox"
+                        checked={eqBasket}
+                        onChange={(e) => setEqBasket(e.target.checked)}
+                      />
+                      <div>
+                        <div style={{ fontWeight: 600 }}>
+                          Delivery plastic basket (780*500*430)
+                        </div>
+                      </div>
+                    </div>
+                    <span className="price-badge">$35</span>
+                  </label>
+                </div>
+
+                {/* Total Bar */}
+                <div className="total-bar" style={{ marginTop: 16 }}>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: "0.95rem" }}>
+                      ចំនួនទឹកប្រាក់សរុប (US$)
+                    </div>
+                  </div>
+                  <div className="amount">${eqTotal}</div>
+                </div>
+
+                {/* Action Buttons */}
+                <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 12 }}>
                   <button
                     type="button"
-                    className="btn btn-pdf btn-sm"
+                    className="btn btn-primary"
+                    style={{
+                      padding: "13px 20px",
+                      fontSize: "1rem",
+                      fontWeight: 600,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 10,
+                    }}
                     disabled={generateLoading}
-                    onClick={() => handleGenerate("pdf_kh")}
+                    onClick={() => handleGenerate("both")}
                   >
-                    បោះពុម្ភជា PDF ខ្មែរ
+                    {generateLoading
+                      ? "កំពុងបង្កើតកិច្ចសន្យា..."
+                      : "ទាញយកកិច្ចសន្យាទាំង ២ (Download Both: KH & EN .docx)"}
                   </button>
-                  <button
-                    type="button"
-                    className="btn btn-pdf btn-sm"
-                    disabled={generateLoading}
-                    onClick={() => handleGenerate("pdf_en")}
-                  >
-                    Export English PDF
-                  </button>
+
+                  <div className="btn-row" style={{ marginTop: 0 }}>
+                    <button
+                      type="button"
+                      className="btn btn-docx"
+                      disabled={generateLoading}
+                      onClick={() => handleGenerate("docx_kh")}
+                    >
+                      ទាញយក Word ខ្មែរ (.docx)
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-docx"
+                      disabled={generateLoading}
+                      onClick={() => handleGenerate("docx_en")}
+                    >
+                      Download English Word (.docx)
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-preview"
+                      disabled={previewLoading}
+                      onClick={handlePreview}
+                    >
+                      {previewLoading ? "កំពុងរៀបចំ..." : "មើលឡើងវិញ (Preview)"}
+                    </button>
+                  </div>
+
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end", marginTop: 4 }}>
+                    <button
+                      type="button"
+                      className="btn btn-pdf btn-sm"
+                      disabled={generateLoading}
+                      onClick={() => handleGenerate("pdf_kh")}
+                    >
+                      បោះពុម្ភជា PDF ខ្មែរ
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-pdf btn-sm"
+                      disabled={generateLoading}
+                      onClick={() => handleGenerate("pdf_en")}
+                    >
+                      Export English PDF
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1521,10 +1537,10 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
             <div
               className="grid-3"
               style={{
-                background: "#F3E8D2",
+                background: "#f8fafc",
                 padding: 16,
                 borderRadius: 10,
-                border: "1px solid #e5d8be",
+                border: "1px solid var(--border)",
                 marginBottom: 20,
               }}
             >
@@ -1646,216 +1662,253 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
 
         {/* 4. AGENTS DATABASE VIEW */}
         {activeTab === "agents" && (
-          <div className="card">
-            <div className="section-title">
-              <span>ទិន្នន័យភ្នាក់ងារ និង ការនាំចូល (Agents Database)</span>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <input
-                  type="file"
-                  accept=".xlsx,.csv"
-                  style={{ width: "auto", fontSize: "0.82rem" }}
-                  onChange={handleImportAgents}
-                />
+          <div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 18 }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+                <h2 style={{ fontSize: 22, fontWeight: 700, margin: 0, color: "#0f172a" }}>
+                  Agents Database
+                </h2>
+                <span style={{ fontSize: 15, color: "#64748b", fontWeight: 500 }}>
+                  ទិន្នន័យភ្នាក់ងារ និង ការនាំចូល
+                </span>
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <label className="btn btn-secondary btn-sm" style={{ cursor: "pointer" }}>
+                  នាំចូល Excel / CSV
+                  <input
+                    type="file"
+                    accept=".xlsx,.csv"
+                    style={{ display: "none" }}
+                    onChange={handleImportAgents}
+                  />
+                </label>
                 <a href="/api/agents/export" className="btn btn-secondary btn-sm">
                   នាំចេញ CSV
                 </a>
               </div>
             </div>
 
-            {/* Direct Add/Edit Agent Form */}
-            <div
-              className="grid-4"
-              style={{
-                background: "#F3E8D2",
-                padding: 16,
-                borderRadius: 10,
-                border: "1px solid #e5d8be",
-                marginBottom: 18,
-              }}
-            >
-              <div className="form-group">
-                <label>
-                  សាខា (Branch) <span className="req">*</span>
-                </label>
-                <select value={agBranch} onChange={(e) => setAgBranch(e.target.value)}>
-                  {branches.map((b) => (
-                    <option key={b.code} value={b.code}>
-                      {b.code} — {b.province_kh}
-                    </option>
-                  ))}
-                </select>
+            {/* Direct Add/Edit Agent Card */}
+            <div className="mini-card">
+              <div className="mini-card-title">
+                <span>{agEditId ? `កែប្រែព័ត៌មានភ្នាក់ងារ (ID: ${agEditId})` : "បន្ថែមភ្នាក់ងារថ្មី (Add Agent)"}</span>
               </div>
-              <div className="form-group">
-                <label>
-                  កូដភ្នាក់ងារ (Agent Code) <span className="req">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={agCode}
-                  placeholder="ឧ. MONA011"
-                  onChange={(e) => setAgCode(e.target.value)}
-                />
+              <div className="grid-4">
+                <div className="form-group">
+                  <label>
+                    សាខា (Branch) <span className="req">*</span>
+                  </label>
+                  <select value={agBranch} onChange={(e) => setAgBranch(e.target.value)}>
+                    {branches.map((b) => (
+                      <option key={b.code} value={b.code}>
+                        {b.code} — {b.province_kh}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>
+                    កូដភ្នាក់ងារ (Agent Code) <span className="req">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={agCode}
+                    placeholder="ឧ. MONA011"
+                    onChange={(e) => setAgCode(e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>
+                    ឈ្មោះខ្មែរ <span className="req">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={agNameKh}
+                    placeholder="ឧ. ប៉ា ចំរើន"
+                    onChange={(e) => setAgNameKh(e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>ឈ្មោះឡាតាំង</label>
+                  <input
+                    type="text"
+                    value={agNameLatin}
+                    placeholder="ឧ. Pa Chamroun"
+                    onChange={(e) => setAgNameLatin(e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>
+                    អត្តសញ្ញាណប័ណ្ណ <span className="req">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={agIdNo}
+                    placeholder="ឧ. 230067812"
+                    onChange={(e) => setAgIdNo(e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>
+                    ទូរស័ព្ទ <span className="req">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={agPhone}
+                    placeholder="ឧ. 060363691"
+                    onChange={(e) => setAgPhone(e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>ធនាគារ</label>
+                  <input
+                    type="text"
+                    value={agBankName}
+                    onChange={(e) => setAgBankName(e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>លេខគណនីធនាគារ</label>
+                  <input
+                    type="text"
+                    value={agBankNo}
+                    placeholder="ឧ. 060363691"
+                    onChange={(e) => setAgBankNo(e.target.value)}
+                  />
+                </div>
+                <div className="form-group" style={{ gridColumn: "1 / -1" }}>
+                  <label>អាសយដ្ឋានពេញលេញ</label>
+                  <input
+                    type="text"
+                    value={agAddr}
+                    placeholder="ផ្លូវ... ភូមិ... ឃុំ... ស្រុក... ខេត្ត..."
+                    onChange={(e) => setAgAddr(e.target.value)}
+                  />
+                </div>
               </div>
-              <div className="form-group">
-                <label>
-                  ឈ្មោះខ្មែរ <span className="req">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={agNameKh}
-                  placeholder="ឧ. ប៉ា ចំរើន"
-                  onChange={(e) => setAgNameKh(e.target.value)}
-                />
-              </div>
-              <div className="form-group">
-                <label>ឈ្មោះឡាតាំង</label>
-                <input
-                  type="text"
-                  value={agNameLatin}
-                  placeholder="ឧ. Pa Chamroun"
-                  onChange={(e) => setAgNameLatin(e.target.value)}
-                />
-              </div>
-              <div className="form-group">
-                <label>
-                  អត្តសញ្ញាណប័ណ្ណ <span className="req">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={agIdNo}
-                  placeholder="ឧ. 230067812"
-                  onChange={(e) => setAgIdNo(e.target.value)}
-                />
-              </div>
-              <div className="form-group">
-                <label>
-                  ទូរស័ព្ទ <span className="req">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={agPhone}
-                  placeholder="ឧ. 060363691"
-                  onChange={(e) => setAgPhone(e.target.value)}
-                />
-              </div>
-              <div className="form-group">
-                <label>ធនាគារ</label>
-                <input
-                  type="text"
-                  value={agBankName}
-                  onChange={(e) => setAgBankName(e.target.value)}
-                />
-              </div>
-              <div className="form-group">
-                <label>លេខគណនីធនាគារ</label>
-                <input
-                  type="text"
-                  value={agBankNo}
-                  placeholder="ឧ. 060363691"
-                  onChange={(e) => setAgBankNo(e.target.value)}
-                />
-              </div>
-              <div className="form-group" style={{ gridColumn: "span 2" }}>
-                <label>អាសយដ្ឋានពេញលេញ</label>
-                <input
-                  type="text"
-                  value={agAddr}
-                  placeholder="ផ្លូវ... ភូមិ... ឃុំ... ស្រុក... ខេត្ត..."
-                  onChange={(e) => setAgAddr(e.target.value)}
-                />
-              </div>
-              <div style={{ gridColumn: "1 / -1", display: "flex", gap: 10 }}>
-                <button className="btn btn-preview btn-sm" onClick={handleSaveAgentDirect}>
-                  រក្សាទុកភ្នាក់ងារ (Save Agent)
+              <div style={{ marginTop: 14, display: "flex", gap: 10 }}>
+                <button className="btn btn-primary btn-sm" onClick={handleSaveAgentDirect}>
+                  {agEditId ? "រក្សាទុកការកែប្រែ (Update Agent)" : "រក្សាទុកភ្នាក់ងារ (Save Agent)"}
                 </button>
+                {agEditId && (
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => {
+                      setAgEditId(null);
+                      setAgCode("");
+                      setAgNameKh("");
+                      setAgNameLatin("");
+                      setAgIdNo("");
+                      setAgPhone("");
+                      setAgBankName("eMoney");
+                      setAgBankNo("");
+                      setAgAddr("");
+                    }}
+                  >
+                    បោះបង់ (Cancel)
+                  </button>
+                )}
               </div>
             </div>
 
-            <div style={{ marginBottom: 14 }}>
-              <input
-                type="text"
-                value={dbAgentSearch}
-                placeholder="ស្វែងរកភ្នាក់ងារ..."
-                onChange={(e) => setDbAgentSearch(e.target.value)}
-              />
-            </div>
+            {/* Search & Table Card */}
+            <div className="mini-card">
+              <div style={{ display: "flex", gap: 12, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", marginBottom: 14 }}>
+                <div style={{ flex: 1, minWidth: 240 }}>
+                  <input
+                    type="text"
+                    value={dbAgentSearch}
+                    placeholder="ស្វែងរកតាម កូដភ្នាក់ងារ, ឈ្មោះខ្មែរ, ឈ្មោះឡាតាំង, លេខទូរស័ព្ទ..."
+                    onChange={(e) => setDbAgentSearch(e.target.value)}
+                  />
+                </div>
+                <span className="badge badge-new">សរុប៖ {agents.length} នាក់</span>
+              </div>
 
-            <table>
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>សាខា</th>
-                  <th>កូដភ្នាក់ងារ</th>
-                  <th>ឈ្មោះខ្មែរ</th>
-                  <th>ឈ្មោះឡាតាំង</th>
-                  <th>អត្តសញ្ញាណប័ណ្ណ</th>
-                  <th>ទូរស័ព្ទ</th>
-                  <th>គណនីធនាគារ</th>
-                  <th>អាសយដ្ឋាន</th>
-                  <th>សកម្មភាព</th>
-                </tr>
-              </thead>
-              <tbody>
-                {agents
-                  .filter(
-                    (ag) =>
-                      !dbAgentSearch ||
-                      (ag.name_kh || "").toLowerCase().includes(dbAgentSearch.toLowerCase()) ||
-                      (ag.name_latin || "").toLowerCase().includes(dbAgentSearch.toLowerCase()) ||
-                      (ag.agent_code || "").toLowerCase().includes(dbAgentSearch.toLowerCase()) ||
-                      (ag.phone || "").includes(dbAgentSearch)
-                  )
-                  .map((ag) => (
-                    <tr key={ag.id}>
-                      <td>{ag.id}</td>
-                      <td>
-                        <span className="badge badge-new">{agentBranchCode(ag, branches)}</span>
-                      </td>
-                      <td>
-                        <span className="badge badge-old">{ag.agent_code || "-"}</span>
-                      </td>
-                      <td>
-                        <strong>{ag.name_kh}</strong>
-                      </td>
-                      <td>{ag.name_latin}</td>
-                      <td>{ag.id_number}</td>
-                      <td>{ag.phone}</td>
-                      <td>
-                        {ag.bank_name}: {ag.bank_account_no} ({ag.bank_account_name})
-                      </td>
-                      <td>{ag.address_full}</td>
-                      <td style={{ display: "flex", gap: 6 }}>
-                        <button
-                          className="btn btn-secondary btn-sm"
-                          onClick={() => {
-                            setAgEditId(ag.id);
-                            setAgBranch(agentBranchCode(ag, branches));
-                            setAgCode(ag.agent_code || "");
-                            setAgNameKh(ag.name_kh || "");
-                            setAgNameLatin(ag.name_latin || "");
-                            setAgIdNo(ag.id_number || "");
-                            setAgPhone(ag.phone || "");
-                            setAgBankName(ag.bank_name || "eMoney");
-                            setAgBankNo(ag.bank_account_no || "");
-                            setAgAddr(ag.address_full || "");
-                          }}
-                        >
-                          កែប្រែ
-                        </button>
-                        <button
-                          className="btn btn-preview btn-sm"
-                          onClick={() => {
-                            openContractFlow("OLD");
-                            fillFormFromAgent(ag, true);
-                          }}
-                        >
-                          បោះពុម្ភទម្រង់ចាស់
-                        </button>
-                      </td>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>សាខា</th>
+                      <th>កូដភ្នាក់ងារ</th>
+                      <th>ឈ្មោះខ្មែរ</th>
+                      <th>ឈ្មោះឡាតាំង</th>
+                      <th>អត្តសញ្ញាណប័ណ្ណ</th>
+                      <th>ទូរស័ព្ទ</th>
+                      <th>គណនីធនាគារ</th>
+                      <th style={{ minWidth: 240 }}>អាសយដ្ឋាន</th>
+                      <th>សកម្មភាព</th>
                     </tr>
-                  ))}
-              </tbody>
-            </table>
+                  </thead>
+                  <tbody>
+                    {agents
+                      .filter(
+                        (ag) =>
+                          !dbAgentSearch ||
+                          (ag.name_kh || "").toLowerCase().includes(dbAgentSearch.toLowerCase()) ||
+                          (ag.name_latin || "").toLowerCase().includes(dbAgentSearch.toLowerCase()) ||
+                          (ag.agent_code || "").toLowerCase().includes(dbAgentSearch.toLowerCase()) ||
+                          (ag.phone || "").includes(dbAgentSearch)
+                      )
+                      .map((ag) => (
+                        <tr key={ag.id}>
+                          <td className="nowrap" style={{ color: "var(--muted)" }}>{ag.id}</td>
+                          <td className="nowrap">
+                            <span className="badge badge-new">{agentBranchCode(ag, branches)}</span>
+                          </td>
+                          <td className="nowrap">
+                            <span className="badge badge-old">{ag.agent_code || "-"}</span>
+                          </td>
+                          <td className="nowrap">
+                            <strong>{ag.name_kh}</strong>
+                          </td>
+                          <td style={{ minWidth: 130 }}>{ag.name_latin}</td>
+                          <td className="nowrap">{ag.id_number}</td>
+                          <td className="nowrap">{ag.phone}</td>
+                          <td style={{ minWidth: 180 }}>
+                            {ag.bank_name}: {ag.bank_account_no} ({ag.bank_account_name})
+                          </td>
+                          <td style={{ minWidth: 240, lineHeight: 1.45, color: "var(--text-secondary)" }}>
+                            {ag.address_full}
+                          </td>
+                          <td className="nowrap">
+                            <div style={{ display: "flex", gap: 6, flexWrap: "nowrap" }}>
+                              <button
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => {
+                                  setAgEditId(ag.id);
+                                  setAgBranch(agentBranchCode(ag, branches));
+                                  setAgCode(ag.agent_code || "");
+                                  setAgNameKh(ag.name_kh || "");
+                                  setAgNameLatin(ag.name_latin || "");
+                                  setAgIdNo(ag.id_number || "");
+                                  setAgPhone(ag.phone || "");
+                                  setAgBankName(ag.bank_name || "eMoney");
+                                  setAgBankNo(ag.bank_account_no || "");
+                                  setAgAddr(ag.address_full || "");
+                                  window.scrollTo({ top: 0, behavior: "smooth" });
+                                }}
+                              >
+                                កែប្រែ
+                              </button>
+                              <button
+                                className="btn btn-docx btn-sm"
+                                onClick={() => {
+                                  openContractFlow("OLD");
+                                  fillFormFromAgent(ag, true);
+                                }}
+                              >
+                                បោះពុម្ពទម្រង់ចាស់
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         )}
 
@@ -1923,10 +1976,10 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
             <div
               className="grid-2"
               style={{
-                background: "#F3E8D2",
+                background: "#f8fafc",
                 padding: 16,
                 borderRadius: 10,
-                border: "1px solid #e5d8be",
+                border: "1px solid var(--border)",
                 marginBottom: 24,
               }}
             >

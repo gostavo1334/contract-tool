@@ -105,6 +105,7 @@ export interface ContractFormPayload {
   eq_printer: boolean;
   eq_scale: boolean;
   eq_basket: boolean;
+  fixed_deposit?: number;
   company_name: string;
   company_law: string;
   company_reg_no: string;
