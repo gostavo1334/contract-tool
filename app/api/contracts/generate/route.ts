@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import PizZip from "pizzip";
 import { supabase } from "@/lib/supabase";
 import { buildTemplateContext, renderDocxBuffer, convertDocxToPdf } from "@/lib/engine";
 import { ContractFormPayload, Branch } from "@/lib/shared";
@@ -6,7 +7,11 @@ import { toLatinDigits } from "@/lib/khmer";
 
 export async function POST(req: NextRequest) {
   try {
-    const payload: ContractFormPayload = await req.json();
+    const body = await req.json();
+    const payload: ContractFormPayload = body;
+    const needPdf = Boolean(body.need_pdf);
+    const pdfLang: "kh" | "en" | "both" =
+      body.pdf_lang === "kh" || body.pdf_lang === "en" ? body.pdf_lang : "both";
 
     const { data: branchData, error: branchErr } = await supabase
       .from("branches")
@@ -26,12 +31,18 @@ export async function POST(req: NextRequest) {
     // Render Khmer contract
     const preparedKh = buildTemplateContext({ ...payload, lang: "kh" }, branch, settingsMap);
     const docxBufKh = renderDocxBuffer(preparedKh);
-    const pdfBufKh = await convertDocxToPdf(docxBufKh);
+    const pdfBufKh =
+      needPdf && (pdfLang === "kh" || pdfLang === "both")
+        ? await convertDocxToPdf(docxBufKh)
+        : null;
 
     // Render English contract
     const preparedEn = buildTemplateContext({ ...payload, lang: "en" }, branch, settingsMap);
     const docxBufEn = renderDocxBuffer(preparedEn);
-    const pdfBufEn = await convertDocxToPdf(docxBufEn);
+    const pdfBufEn =
+      needPdf && (pdfLang === "en" || pdfLang === "both")
+        ? await convertDocxToPdf(docxBufEn)
+        : null;
 
     const contractNo = preparedKh.context.contract_no;
     const latinSlug = (preparedKh.context.agent_name_latin || "Agent").replace(/[^A-Za-z0-9]+/g, "_");
@@ -140,20 +151,31 @@ export async function POST(req: NextRequest) {
     const { data: contractRecord } = await supabase.from("contracts").insert(contractPayload).select().single();
 
     // Advance next_seq if contractNo matches branch prefix
-    const cnoNorm = toLatinDigits(contractNo).toUpperCase();
-    if (cnoNorm.startsWith(branch.code)) {
-      const suffix = cnoNorm.slice(branch.code.length);
-      const match = suffix.match(/^(\d+)/);
-      if (match) {
-        const usedSeq = parseInt(match[1], 10);
-        await supabase.rpc("bump_branch_seq", { p_code: branch.code, p_next: usedSeq + 1 });
+    try {
+      const cnoNorm = toLatinDigits(contractNo).toUpperCase();
+      if (cnoNorm.startsWith(branch.code)) {
+        const suffix = cnoNorm.slice(branch.code.length);
+        const match = suffix.match(/^(\d+)/);
+        if (match) {
+          const usedSeq = parseInt(match[1], 10);
+          await supabase.rpc("bump_branch_seq", { p_code: branch.code, p_next: usedSeq + 1 });
+        }
       }
+    } catch (seqErr) {
+      console.warn("bump_branch_seq warning:", seqErr);
     }
 
     const docxBase64Kh = `data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,${docxBufKh.toString("base64")}`;
     const pdfBase64Kh = pdfBufKh ? `data:application/pdf;base64,${pdfBufKh.toString("base64")}` : null;
     const docxBase64En = `data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,${docxBufEn.toString("base64")}`;
     const pdfBase64En = pdfBufEn ? `data:application/pdf;base64,${pdfBufEn.toString("base64")}` : null;
+
+    const zip = new PizZip();
+    zip.file(docxFilenameKh, docxBufKh);
+    zip.file(docxFilenameEn, docxBufEn);
+    const zipBuf = zip.generate({ type: "nodebuffer" });
+    const zipFilename = `${preparedKh.template_type}_${contractNo}_${latinSlug}_KH_EN.zip`;
+    const zipBase64 = `data:application/zip;base64,${zipBuf.toString("base64")}`;
 
     const { data: updatedBranches } = await supabase.from("branches").select("*").order("code", { ascending: true });
 
@@ -170,6 +192,8 @@ export async function POST(req: NextRequest) {
       docx_filename_en: docxFilenameEn,
       pdf_base64_en: pdfBase64En,
       pdf_filename_en: pdfFilenameEn,
+      zip_base64: zipBase64,
+      zip_filename: zipFilename,
       // Default compatibility keys
       docx_base64: docxBase64Kh,
       docx_filename: docxFilenameKh,

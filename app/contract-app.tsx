@@ -21,6 +21,13 @@ import { GazetteerType, findMatchingItem } from "@/lib/gazetteer";
 const gazetteerData: GazetteerType = gazetteerDataRaw;
 const PROVINCES_LIST = Object.keys(gazetteerData);
 
+interface AuthUser {
+  username: string;
+  displayName: string;
+  role: "admin" | "staff";
+  createdAt?: string;
+}
+
 interface InitialData {
   today: string;
   branches: Branch[];
@@ -29,6 +36,7 @@ interface InitialData {
   recent_contracts: ContractRecord[];
   agents: Agent[];
   agents_count: number;
+  current_user?: { username: string; displayName: string; role: string } | null;
 }
 
 export default function ContractApp({ initialData }: { initialData: InitialData }) {
@@ -36,6 +44,25 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
   const [flowMode, setFlowMode] = useState<"NEW" | "OLD">("NEW");
   const [templateType, setTemplateType] = useState<"NEW" | "OLD">("NEW");
   const [contractLang, setContractLang] = useState<"kh" | "en">("kh");
+
+  // Auth state
+  const [currentUser, setCurrentUser] = useState<{
+    username: string;
+    displayName: string;
+    role: string;
+  } | null>(initialData.current_user || null);
+  const [loginModalOpen, setLoginModalOpen] = useState<boolean>(false);
+  const [loginUsername, setLoginUsername] = useState<string>("");
+  const [loginPassword, setLoginPassword] = useState<string>("");
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [loginLoading, setLoginLoading] = useState<boolean>(false);
+
+  // User accounts management (in Settings when logged in)
+  const [authUsers, setAuthUsers] = useState<AuthUser[]>([]);
+  const [newUserUsername, setNewUserUsername] = useState<string>("");
+  const [newUserDisplayName, setNewUserDisplayName] = useState<string>("");
+  const [newUserPassword, setNewUserPassword] = useState<string>("");
+  const [newUserRole, setNewUserRole] = useState<"admin" | "staff">("admin");
 
   // State caches
   const [branches, setBranches] = useState<Branch[]>(initialData.branches || []);
@@ -123,11 +150,19 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
   const [agAddr, setAgAddr] = useState<string>("");
   const [dbAgentSearch, setDbAgentSearch] = useState<string>("");
 
-  // Preview panel
+  // Preview panel & generated files
   const [previewData, setPreviewData] = useState<any>(null);
   const [previewTab, setPreviewTab] = useState<"kh" | "en">("kh");
   const [previewLoading, setPreviewLoading] = useState<boolean>(false);
   const [generateLoading, setGenerateLoading] = useState<boolean>(false);
+  const [generatedFiles, setGeneratedFiles] = useState<{
+    khUrl: string;
+    khName: string;
+    enUrl: string;
+    enName: string;
+    zipUrl: string;
+    zipName: string;
+  } | null>(null);
 
   const latinManuallyEdited = useRef<boolean>(false);
   const bankAccountManuallyEdited = useRef<boolean>(false);
@@ -271,16 +306,6 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
 
   const onKhmerNameChange = (val: string) => {
     setNameKh(val);
-    fetch(`/api/transliterate?name_kh=${encodeURIComponent(val)}`)
-      .then((r) => r.json())
-      .then((d) => {
-        if (!latinManuallyEdited.current) {
-          setNameLatin(d.name_latin || "");
-          if (!bankAccountManuallyEdited.current) {
-            setBankAccountName(d.name_latin || "");
-          }
-        }
-      });
   };
 
   const onContractNoChange = (val: string) => {
@@ -535,21 +560,114 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
     }
   };
 
-  const triggerDownload = (url: string, filename: string) => {
+  const dataUriToBlobUrl = (url: string): string => {
+    if (!url || !url.startsWith("data:")) return url;
+    try {
+      const [meta, b64] = url.split(",");
+      const mimeMatch = meta.match(/data:([^;]+)/);
+      const mime = mimeMatch ? mimeMatch[1] : "application/octet-stream";
+      const bin = atob(b64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      return URL.createObjectURL(new Blob([bytes], { type: mime }));
+    } catch {
+      return url;
+    }
+  };
+
+  const triggerDownload = (url: string, filename: string, keepUrl = false) => {
+    const isData = url.startsWith("data:");
+    const href = isData ? dataUriToBlobUrl(url) : url;
     const a = document.createElement("a");
-    a.href = url;
+    a.href = href;
     a.download = filename;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+    if (!keepUrl && isData && href.startsWith("blob:")) {
+      setTimeout(() => URL.revokeObjectURL(href), 5000);
+    }
+  };
+
+  const exportDocxAsPdfClient = async (docxUrl: string, pdfTitle: string) => {
+    try {
+      const { renderAsync } = await import("docx-preview");
+      const resp = await fetch(docxUrl);
+      const blob = await resp.blob();
+
+      const iframe = document.createElement("iframe");
+      iframe.style.position = "fixed";
+      iframe.style.right = "0";
+      iframe.style.bottom = "0";
+      iframe.style.width = "0";
+      iframe.style.height = "0";
+      iframe.style.border = "0";
+      document.body.appendChild(iframe);
+
+      const doc = iframe.contentWindow?.document;
+      if (!doc || !iframe.contentWindow) {
+        document.body.removeChild(iframe);
+        showStatus("មិនអាចបើកផ្ទាំងបោះពុម្ភ PDF បានទេ។", true);
+        return;
+      }
+
+      doc.open();
+      doc.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${pdfTitle}</title><style>
+        @page { size: A4; margin: 0; }
+        html, body { margin: 0; padding: 0; background: #fff; }
+        .docx-wrapper { background: transparent !important; padding: 0 !important; }
+        .docx-wrapper > section.docx { box-shadow: none !important; margin: 0 auto !important; page-break-after: always; }
+        .docx-wrapper > section.docx:last-child { page-break-after: auto; }
+      </style></head><body><div id="docx-styles"></div><div id="docx-body"></div></body></html>`);
+      doc.close();
+
+      const bodyEl = doc.getElementById("docx-body");
+      const styleEl = doc.getElementById("docx-styles");
+      if (!bodyEl || !styleEl) {
+        document.body.removeChild(iframe);
+        return;
+      }
+
+      await renderAsync(blob, bodyEl, styleEl, {
+        inWrapper: true,
+        hideWrapperOnPrint: false,
+        breakPages: true,
+        ignoreWidth: false,
+        ignoreHeight: false,
+        useBase64URL: true,
+      });
+
+      await new Promise((r) => setTimeout(r, 350));
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+
+      setTimeout(() => {
+        if (document.body.contains(iframe)) {
+          document.body.removeChild(iframe);
+        }
+      }, 60000);
+    } catch (err: any) {
+      showStatus("កំហុសក្នុងការបង្កើត PDF៖ " + (err?.message || "Unknown error"), true);
+    }
   };
 
   const handleGenerate = async (
     target: "both" | "docx_kh" | "docx_en" | "pdf_kh" | "pdf_en" | "docx" | "pdf" = "both"
   ) => {
+    if (!nameKh.trim() || !idNumber.trim() || !phone.trim() || !addressFull.trim()) {
+      showStatus("សូមបំពេញ ឈ្មោះខ្មែរ, លេខអត្តសញ្ញាណប័ណ្ណ, លេខទូរស័ព្ទ និង អាសយដ្ឋានពេញលេញ ជាមុនសិន។", true);
+      return;
+    }
+    const isPdfTarget = target === "pdf_kh" || target === "pdf_en" || target === "pdf";
+    const pdfLang = target === "pdf_en" ? "en" : "kh";
+
     setGenerateLoading(true);
     try {
-      const payload = collectPayload();
+      const payload = {
+        ...collectPayload(),
+        need_pdf: isPdfTarget,
+        pdf_lang: pdfLang,
+      };
       const res = await fetch("/api/contracts/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -567,41 +685,55 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
       if (data.contract) {
         setRecentContracts((prev) => [data.contract, ...prev]);
       }
+
+      // Revoke previous blob URLs and store new ready-to-download links
+      if (generatedFiles) {
+        [generatedFiles.khUrl, generatedFiles.enUrl, generatedFiles.zipUrl].forEach((u) => {
+          if (u && u.startsWith("blob:")) URL.revokeObjectURL(u);
+        });
+      }
+      const nextFiles = {
+        khUrl: data.docx_base64_kh ? dataUriToBlobUrl(data.docx_base64_kh) : "",
+        khName: data.docx_filename_kh || "contract_KH.docx",
+        enUrl: data.docx_base64_en ? dataUriToBlobUrl(data.docx_base64_en) : "",
+        enName: data.docx_filename_en || "contract_EN.docx",
+        zipUrl: data.zip_base64 ? dataUriToBlobUrl(data.zip_base64) : "",
+        zipName: data.zip_filename || "contracts_KH_EN.zip",
+      };
+      setGeneratedFiles(nextFiles);
+
       showStatus(`បានបង្កើតកិច្ចសន្យាលេខ ${data.contract?.contract_no} និងរក្សាទុកភ្នាក់ងារ «${data.agent?.name_kh}» ដោយជោគជ័យ!`);
 
-      // Trigger requested downloads
+      // Trigger requested download (single file per click so browser never blocks)
       if (target === "both") {
-        if (data.docx_base64_kh) {
-          triggerDownload(data.docx_base64_kh, data.docx_filename_kh || "contract_KH.docx");
+        if (nextFiles.zipUrl) {
+          triggerDownload(nextFiles.zipUrl, nextFiles.zipName, true);
+        } else if (nextFiles.khUrl) {
+          triggerDownload(nextFiles.khUrl, nextFiles.khName, true);
         }
-        setTimeout(() => {
-          if (data.docx_base64_en) {
-            triggerDownload(data.docx_base64_en, data.docx_filename_en || "contract_EN.docx");
-          }
-        }, 350);
       } else if (target === "docx_kh" || target === "docx") {
-        const file = data.docx_base64_kh || data.docx_base64;
-        const name = data.docx_filename_kh || data.docx_filename || "contract_KH.docx";
-        if (file) triggerDownload(file, name);
+        if (nextFiles.khUrl) triggerDownload(nextFiles.khUrl, nextFiles.khName, true);
       } else if (target === "docx_en") {
-        const file = data.docx_base64_en;
-        const name = data.docx_filename_en || "contract_EN.docx";
-        if (file) triggerDownload(file, name);
+        if (nextFiles.enUrl) triggerDownload(nextFiles.enUrl, nextFiles.enName, true);
       } else if (target === "pdf_kh" || target === "pdf") {
         const file = data.pdf_base64_kh || data.pdf_base64;
         const name = data.pdf_filename_kh || data.pdf_filename || "contract_KH.pdf";
         if (file) {
           triggerDownload(file, name);
+        } else if (nextFiles.khUrl) {
+          await exportDocxAsPdfClient(nextFiles.khUrl, name.replace(/\.pdf$/i, ""));
         } else {
-          showStatus("មិនអាចបង្កើតជា PDF បានទេ (PDF converter មិនទាន់ដំណើរការ)។ សូមទាញយកជា Word (.docx) ជំនួសវិញ។", true);
+          showStatus("មិនអាចបង្កើតជា PDF បានទេ។", true);
         }
       } else if (target === "pdf_en") {
         const file = data.pdf_base64_en;
         const name = data.pdf_filename_en || "contract_EN.pdf";
         if (file) {
           triggerDownload(file, name);
+        } else if (nextFiles.enUrl) {
+          await exportDocxAsPdfClient(nextFiles.enUrl, name.replace(/\.pdf$/i, ""));
         } else {
-          showStatus("មិនអាចបង្កើតជា PDF បានទេ (PDF converter មិនទាន់ដំណើរការ)។ សូមទាញយកជា Word (.docx) ជំនួសវិញ។", true);
+          showStatus("មិនអាចបង្កើតជា PDF បានទេ។", true);
         }
       }
     } catch (err: any) {
@@ -724,6 +856,110 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
     }
   };
 
+  const loadAuthUsers = async () => {
+    try {
+      const res = await fetch("/api/auth/users");
+      if (res.ok) {
+        const d = await res.json();
+        setAuthUsers(d.users || []);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  useEffect(() => {
+    if (currentUser && activeTab === "settings") {
+      loadAuthUsers();
+    }
+  }, [currentUser, activeTab]);
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError(null);
+    setLoginLoading(true);
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: loginUsername,
+          password: loginPassword,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setLoginError(data.detail || "ឈ្មោះអ្នកប្រើប្រាស់ ឬ ពាក្យសម្ងាត់មិនត្រឹមត្រូវទេ។");
+        return;
+      }
+      setCurrentUser(data.user);
+      setLoginModalOpen(false);
+      setLoginUsername("");
+      setLoginPassword("");
+      showStatus(`សូមស្វាគមន៍ ${data.user?.displayName || data.user?.username}! លោកអ្នកអាចប្រើមុខងារទាំងអស់បានហើយ។`);
+      // Refresh protected history & user list
+      fetch("/api/contracts")
+        .then((r) => (r.ok ? r.json() : []))
+        .then((c) => {
+          if (Array.isArray(c)) setRecentContracts(c);
+        })
+        .catch(() => {});
+      loadAuthUsers();
+    } catch (err: any) {
+      setLoginError(err?.message || "មានបញ្ហាក្នុងការចូលប្រព័ន្ធ");
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    setCurrentUser(null);
+    setAuthUsers([]);
+    setRecentContracts([]);
+    if (["branches", "agents", "history", "settings"].includes(activeTab)) {
+      setActiveTab("home");
+    }
+    showStatus("លោកអ្នកបានចាកចេញពីគណនីរួចរាល់។");
+  };
+
+  const handleSaveAuthUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const res = await fetch("/api/auth/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: newUserUsername,
+        displayName: newUserDisplayName || newUserUsername,
+        password: newUserPassword,
+        role: newUserRole,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showStatus(data.detail || "មិនអាចរក្សាទុកគណនីបានទេ", true);
+      return;
+    }
+    setAuthUsers(data.users || []);
+    setNewUserUsername("");
+    setNewUserDisplayName("");
+    setNewUserPassword("");
+    showStatus("បានរក្សាទុកគណនីអ្នកប្រើប្រាស់ដោយជោគជ័យ!");
+  };
+
+  const handleDeleteAuthUser = async (username: string) => {
+    const res = await fetch(`/api/auth/users?username=${encodeURIComponent(username)}`, {
+      method: "DELETE",
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showStatus(data.detail || "មិនអាចលុបគណនីបានទេ", true);
+      return;
+    }
+    setAuthUsers(data.users || []);
+    showStatus(`បានលុបគណនី «${username}» រួចរាល់។`);
+  };
+
   // Calculated equipment total
   const eqTotal =
     (Number.isFinite(fixedDeposit) ? Math.max(0, fixedDeposit) : 0) +
@@ -757,37 +993,68 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
               Metfone Express Agent Contract Filler
             </div>
           </div>
-          <div className="nav-tabs">
+          <div className="nav-tabs" style={{ alignItems: "center" }}>
             <button
               className={`nav-btn ${activeTab === "home" ? "active" : ""}`}
               onClick={() => setActiveTab("home")}
             >
               ទំព័រដើម
             </button>
-            <button
-              className={`nav-btn ${activeTab === "branches" ? "active" : ""}`}
-              onClick={() => setActiveTab("branches")}
-            >
-              សាខា (Branches)
-            </button>
-            <button
-              className={`nav-btn ${activeTab === "agents" ? "active" : ""}`}
-              onClick={() => setActiveTab("agents")}
-            >
-              ទិន្នន័យភ្នាក់ងារ
-            </button>
-            <button
-              className={`nav-btn ${activeTab === "history" ? "active" : ""}`}
-              onClick={() => setActiveTab("history")}
-            >
-              ប្រវត្តិកិច្ចសន្យា
-            </button>
-            <button
-              className={`nav-btn ${activeTab === "settings" ? "active" : ""}`}
-              onClick={() => setActiveTab("settings")}
-            >
-              ការកំណត់ &amp; Tags
-            </button>
+            {currentUser && (
+              <>
+                <button
+                  className={`nav-btn ${activeTab === "branches" ? "active" : ""}`}
+                  onClick={() => setActiveTab("branches")}
+                >
+                  សាខា (Branches)
+                </button>
+                <button
+                  className={`nav-btn ${activeTab === "agents" ? "active" : ""}`}
+                  onClick={() => setActiveTab("agents")}
+                >
+                  ទិន្នន័យភ្នាក់ងារ
+                </button>
+                <button
+                  className={`nav-btn ${activeTab === "history" ? "active" : ""}`}
+                  onClick={() => setActiveTab("history")}
+                >
+                  ប្រវត្តិកិច្ចសន្យា
+                </button>
+                <button
+                  className={`nav-btn ${activeTab === "settings" ? "active" : ""}`}
+                  onClick={() => setActiveTab("settings")}
+                >
+                  ការកំណត់ &amp; Tags
+                </button>
+              </>
+            )}
+            <div style={{ marginLeft: 8, display: "flex", alignItems: "center", gap: 8 }}>
+              {currentUser ? (
+                <>
+                  <span className="badge badge-new" style={{ padding: "5px 10px" }}>
+                    {currentUser.displayName || currentUser.username}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={handleLogout}
+                  >
+                    ចាកចេញ (Logout)
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={() => {
+                    setLoginError(null);
+                    setLoginModalOpen(true);
+                  }}
+                >
+                  ចូលគណនី (Login)
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </header>
@@ -1034,18 +1301,20 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
                     <label>លេខអត្តសញ្ញាណប័ណ្ណ <span className="req">*</span></label>
                     <input
                       type="text"
+                      inputMode="text"
                       value={idNumber}
-                      placeholder="ឧ. 230067812"
-                      onChange={(e) => setIdNumber(e.target.value)}
+                      placeholder="ឧ. 230067812 ឬ 110512075(01)"
+                      onChange={(e) => setIdNumber(e.target.value.replace(/[^0-9() ]/g, ""))}
                     />
                   </div>
                   <div className="form-group">
                     <label>លេខទូរស័ព្ទ <span className="req">*</span></label>
                     <input
                       type="text"
+                      inputMode="numeric"
                       value={phone}
                       placeholder="ឧ. 060363691"
-                      onChange={(e) => setPhone(e.target.value)}
+                      onChange={(e) => setPhone(e.target.value.replace(/[^0-9]/g, ""))}
                     />
                   </div>
                 </div>
@@ -1223,9 +1492,10 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
                     <label>លេខកុង</label>
                     <input
                       type="text"
+                      inputMode="numeric"
                       value={bankAccountNo}
                       placeholder="ឧ. 0889158332"
-                      onChange={(e) => setBankAccountNo(e.target.value)}
+                      onChange={(e) => setBankAccountNo(e.target.value.replace(/[^0-9]/g, ""))}
                     />
                   </div>
                   <div className="form-group">
@@ -1479,6 +1749,84 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
                       Export English PDF
                     </button>
                   </div>
+
+                  {generatedFiles && (
+                    <div
+                      style={{
+                        marginTop: 8,
+                        padding: "12px 16px",
+                        borderRadius: 10,
+                        background: "#f0fdf4",
+                        border: "1px solid #bbf7d0",
+                        display: "flex",
+                        flexWrap: "wrap",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 10,
+                      }}
+                    >
+                      <span style={{ fontSize: "0.88rem", fontWeight: 600, color: "#166534" }}>
+                        ឯកសារកិច្ចសន្យារួចរាល់ (Ready to Download):
+                      </span>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        {generatedFiles.zipUrl && (
+                          <a
+                            href={generatedFiles.zipUrl}
+                            download={generatedFiles.zipName}
+                            className="btn btn-primary btn-sm"
+                          >
+                            ទាញយកទាំង ២ (.zip)
+                          </a>
+                        )}
+                        {generatedFiles.khUrl && (
+                          <a
+                            href={generatedFiles.khUrl}
+                            download={generatedFiles.khName}
+                            className="btn btn-docx btn-sm"
+                          >
+                            Word ខ្មែរ (.docx)
+                          </a>
+                        )}
+                        {generatedFiles.enUrl && (
+                          <a
+                            href={generatedFiles.enUrl}
+                            download={generatedFiles.enName}
+                            className="btn btn-docx btn-sm"
+                          >
+                            English Word (.docx)
+                          </a>
+                        )}
+                        {generatedFiles.khUrl && (
+                          <button
+                            type="button"
+                            className="btn btn-pdf btn-sm"
+                            onClick={() =>
+                              exportDocxAsPdfClient(
+                                generatedFiles.khUrl,
+                                generatedFiles.khName.replace(/\.docx$/i, "")
+                              )
+                            }
+                          >
+                            PDF ខ្មែរ
+                          </button>
+                        )}
+                        {generatedFiles.enUrl && (
+                          <button
+                            type="button"
+                            className="btn btn-pdf btn-sm"
+                            onClick={() =>
+                              exportDocxAsPdfClient(
+                                generatedFiles.enUrl,
+                                generatedFiles.enName.replace(/\.docx$/i, "")
+                              )
+                            }
+                          >
+                            English PDF
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1590,7 +1938,7 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
         )}
 
         {/* 3. BRANCHES ADMIN VIEW */}
-        {activeTab === "branches" && (
+        {currentUser && activeTab === "branches" && (
           <div className="card">
             <div className="section-title">
               <span>គ្រប់គ្រងតារាងសាខា (Branches Table — Admin)</span>
@@ -1723,7 +2071,7 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
         )}
 
         {/* 4. AGENTS DATABASE VIEW */}
-        {activeTab === "agents" && (
+        {currentUser && activeTab === "agents" && (
           <div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 18 }}>
               <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
@@ -1975,7 +2323,7 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
         )}
 
         {/* 5. HISTORY VIEW */}
-        {activeTab === "history" && (
+        {currentUser && activeTab === "history" && (
           <div className="card">
             <div className="section-title">
               <span>ប្រវត្តិកិច្ចសន្យាដែលបានបង្កើត (Contracts History)</span>
@@ -2030,7 +2378,7 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
         )}
 
         {/* 6. SETTINGS VIEW */}
-        {activeTab === "settings" && (
+        {currentUser && activeTab === "settings" && (
           <div className="card">
             <div className="section-title">
               <span>ការកំណត់ទម្រង់លេខ និង បញ្ជី Tags ក្នុងគំរូ Word (.docx)</span>
@@ -2127,9 +2475,194 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
                 ))}
               </tbody>
             </table>
+            <div style={{ marginTop: 28, paddingTop: 20, borderTop: "1px solid var(--border)" }}>
+              <h3 className="section-title">
+                គ្រប់គ្រងគណនីអ្នកប្រើប្រាស់ (User Accounts)
+              </h3>
+              <form
+                onSubmit={handleSaveAuthUser}
+                className="grid-4"
+                style={{
+                  background: "#f8fafc",
+                  padding: 16,
+                  borderRadius: 10,
+                  border: "1px solid var(--border)",
+                  marginBottom: 16,
+                }}
+              >
+                <div className="form-group">
+                  <label>ឈ្មោះគណនី (Username) *</label>
+                  <input
+                    type="text"
+                    required
+                    value={newUserUsername}
+                    placeholder="ឧ. admin ឬ staff1"
+                    onChange={(e) => setNewUserUsername(e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>ឈ្មោះបង្ហាញ (Display Name)</label>
+                  <input
+                    type="text"
+                    value={newUserDisplayName}
+                    placeholder="ឧ. Admin Staff"
+                    onChange={(e) => setNewUserDisplayName(e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>ពាក្យសម្ងាត់ថ្មី (Password) *</label>
+                  <input
+                    type="password"
+                    required
+                    minLength={4}
+                    value={newUserPassword}
+                    placeholder="យ៉ាងតិច ៤ តួអក្សរ"
+                    onChange={(e) => setNewUserPassword(e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>តួនាទី (Role)</label>
+                  <select
+                    value={newUserRole}
+                    onChange={(e) =>
+                      setNewUserRole(e.target.value === "staff" ? "staff" : "admin")
+                    }
+                  >
+                    <option value="admin">Admin</option>
+                    <option value="staff">Staff</option>
+                  </select>
+                </div>
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <button type="submit" className="btn btn-primary btn-sm">
+                    បន្ថែម ឬ ប្តូរពាក្យសម្ងាត់គណនី (Save User)
+                  </button>
+                </div>
+              </form>
+
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Username</th>
+                      <th>Display Name</th>
+                      <th>Role</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {authUsers.map((u) => (
+                      <tr key={u.username}>
+                        <td><strong>{u.username}</strong></td>
+                        <td>{u.displayName}</td>
+                        <td><span className="badge badge-new">{u.role}</span></td>
+                        <td className="nowrap">
+                          {currentUser && u.username.toLowerCase() !== currentUser.username.toLowerCase() ? (
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => handleDeleteAuthUser(u.username)}
+                            >
+                              លុប (Delete)
+                            </button>
+                          ) : (
+                            <span style={{ fontSize: "0.82rem", color: "var(--muted)" }}>គណនីបច្ចុប្បន្ន</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         )}
       </div>
+
+      {/* LOGIN MODAL */}
+      {loginModalOpen && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15, 23, 42, 0.55)",
+            backdropFilter: "blur(3px)",
+            zIndex: 1000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+          }}
+          onClick={() => setLoginModalOpen(false)}
+        >
+          <div
+            className="card"
+            style={{
+              width: "100%",
+              maxWidth: 420,
+              margin: 0,
+              padding: "26px 24px",
+              boxShadow: "0 20px 50px rgba(0, 0, 0, 0.2)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ marginBottom: 18 }}>
+              <h3 style={{ margin: 0, fontSize: "1.2rem", fontWeight: 800, color: "#0f172a" }}>
+                ចូលប្រព័ន្ធ (Login)
+              </h3>
+              <p style={{ margin: "4px 0 0", fontSize: "0.86rem", color: "var(--muted)" }}>
+                សូមចូលគណនីដើម្បីមើល និងគ្រប់គ្រងមុខងារទាំងអស់
+              </p>
+            </div>
+
+            {loginError && (
+              <div className="alert alert-error" style={{ marginBottom: 14 }}>
+                {loginError}
+              </div>
+            )}
+
+            <form onSubmit={handleLogin} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <div className="form-group">
+                <label>ឈ្មោះអ្នកប្រើប្រាស់ ឬ អ៊ីម៉ែល (Username / Email)</label>
+                <input
+                  type="text"
+                  autoFocus
+                  required
+                  value={loginUsername}
+                  placeholder="admin"
+                  onChange={(e) => setLoginUsername(e.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label>ពាក្យសម្ងាត់ (Password)</label>
+                <input
+                  type="password"
+                  required
+                  value={loginPassword}
+                  placeholder="••••••••"
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                />
+              </div>
+              <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ flex: 1 }}
+                  disabled={loginLoading}
+                >
+                  {loginLoading ? "កំពុងផ្ទៀងផ្ទាត់..." : "ចូលប្រព័ន្ធ (Login)"}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setLoginModalOpen(false)}
+                >
+                  បោះបង់
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </>
   );
 }

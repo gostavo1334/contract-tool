@@ -71,7 +71,7 @@ export function formatContractDate(dateStr: string, templateType: string = "NEW"
   let day: string, month: string;
   const year = pad(y, 4);
   if ((templateType || "NEW").toUpperCase() === "NEW") {
-    day = toKhmerDigits(pad(d));
+    day = pad(d);
     month = KHMER_MONTHS[m - 1];
   } else {
     day = pad(d);

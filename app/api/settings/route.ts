@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { getSessionUser } from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
+  const session = await getSessionUser();
+  if (!session) {
+    return NextResponse.json({ detail: "Unauthorized" }, { status: 401 });
+  }
   try {
     const body = await req.json();
     const updates = [];

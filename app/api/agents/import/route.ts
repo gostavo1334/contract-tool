@@ -3,8 +3,13 @@ import { supabase } from "@/lib/supabase";
 import Papa from "papaparse";
 import ExcelJS from "exceljs";
 import { toLatinDigits } from "@/lib/khmer";
+import { getSessionUser } from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
+  const session = await getSessionUser();
+  if (!session) {
+    return NextResponse.json({ detail: "Unauthorized" }, { status: 401 });
+  }
   try {
     const formData = await req.formData();
     const file = formData.get("file") as File;

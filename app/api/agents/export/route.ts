@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { getSessionUser } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
+  const session = await getSessionUser();
+  if (!session) {
+    return NextResponse.json({ detail: "Unauthorized" }, { status: 401 });
+  }
   const { data, error } = await supabase.from("agents").select("*").order("id", { ascending: false });
   if (error) {
     return NextResponse.json({ detail: error.message }, { status: 400 });

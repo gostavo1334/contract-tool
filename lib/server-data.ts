@@ -1,9 +1,11 @@
 import { supabase } from "@/lib/supabase";
 import { type Branch, type Agent, type ContractRecord, type Settings } from "@/lib/shared";
+import { getSessionUser } from "@/lib/auth";
 import fs from "fs";
 import path from "path";
 
 export async function getInitData() {
+  const sessionUser = await getSessionUser();
   const [branchesRes, settingsRes, contractsRes, agentsRes] = await Promise.all([
     supabase.from("branches").select("*").order("code", { ascending: true }),
     supabase.from("settings").select("*"),
@@ -65,8 +67,9 @@ export async function getInitData() {
     branches,
     settings,
     tag_reference: tagReference,
-    recent_contracts: contracts,
+    recent_contracts: sessionUser ? contracts : [],
     agents: (agentsRes.data || []) as Agent[],
     agents_count: (agentsRes.data || []).length,
+    current_user: sessionUser,
   };
 }

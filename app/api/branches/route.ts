@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { Branch, ContractRecord } from "@/lib/shared";
+import { getSessionUser } from "@/lib/auth";
 
 export async function GET() {
   const [branchesRes, contractsRes] = await Promise.all([
@@ -32,6 +33,10 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const session = await getSessionUser();
+  if (!session) {
+    return NextResponse.json({ detail: "Unauthorized" }, { status: 401 });
+  }
   try {
     const body = await req.json();
     const code = (body.code || "").trim().toUpperCase();
