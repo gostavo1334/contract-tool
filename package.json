@@ -13,6 +13,8 @@
     "docx-preview": "^0.4.1",
     "docxtemplater": "^3.71.1",
     "exceljs": "^4.4.0",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.1",
     "next": "16.4.6",
     "papaparse": "^5.7.0",
     "pizzip": "^3.3.0",

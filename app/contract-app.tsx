@@ -155,6 +155,8 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
   const [previewTab, setPreviewTab] = useState<"kh" | "en">("kh");
   const [previewLoading, setPreviewLoading] = useState<boolean>(false);
   const [generateLoading, setGenerateLoading] = useState<boolean>(false);
+  const [generateStage, setGenerateStage] = useState<string>("");
+  const [pdfZip, setPdfZip] = useState<{ url: string; name: string } | null>(null);
   const [generatedFiles, setGeneratedFiles] = useState<{
     khUrl: string;
     khName: string;
@@ -589,84 +591,161 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
     }
   };
 
-  const exportDocxAsPdfClient = async (docxUrl: string, pdfTitle: string) => {
+  // Render a .docx (blob URL / data URL) into a real PDF Blob entirely in the browser.
+  // Works on Vercel where no LibreOffice is available, and keeps Khmer glyphs intact
+  // because the browser itself shapes the text before it is rasterised.
+  const renderDocxToPdfBlob = async (docxUrl: string): Promise<Blob> => {
+    const [{ renderAsync }, html2canvasMod, jspdfMod] = await Promise.all([
+      import("docx-preview"),
+      import("html2canvas"),
+      import("jspdf"),
+    ]);
+    const html2canvas = html2canvasMod.default;
+    const { jsPDF } = jspdfMod;
+
+    const resp = await fetch(docxUrl);
+    const blob = await resp.blob();
+
+    const host = document.createElement("div");
+    host.style.position = "fixed";
+    host.style.left = "-100000px";
+    host.style.top = "0";
+    host.style.background = "#ffffff";
+    host.style.zIndex = "-1";
+    const styleEl = document.createElement("div");
+    const bodyEl = document.createElement("div");
+    host.appendChild(styleEl);
+    host.appendChild(bodyEl);
+    document.body.appendChild(host);
+
     try {
-      const { renderAsync } = await import("docx-preview");
-      const resp = await fetch(docxUrl);
-      const blob = await resp.blob();
-
-      const iframe = document.createElement("iframe");
-      iframe.style.position = "fixed";
-      iframe.style.right = "0";
-      iframe.style.bottom = "0";
-      iframe.style.width = "0";
-      iframe.style.height = "0";
-      iframe.style.border = "0";
-      document.body.appendChild(iframe);
-
-      const doc = iframe.contentWindow?.document;
-      if (!doc || !iframe.contentWindow) {
-        document.body.removeChild(iframe);
-        showStatus("មិនអាចបើកផ្ទាំងបោះពុម្ភ PDF បានទេ។", true);
-        return;
-      }
-
-      doc.open();
-      doc.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${pdfTitle}</title><style>
-        @page { size: A4; margin: 0; }
-        html, body { margin: 0; padding: 0; background: #fff; }
-        .docx-wrapper { background: transparent !important; padding: 0 !important; }
-        .docx-wrapper > section.docx { box-shadow: none !important; margin: 0 auto !important; page-break-after: always; }
-        .docx-wrapper > section.docx:last-child { page-break-after: auto; }
-      </style></head><body><div id="docx-styles"></div><div id="docx-body"></div></body></html>`);
-      doc.close();
-
-      const bodyEl = doc.getElementById("docx-body");
-      const styleEl = doc.getElementById("docx-styles");
-      if (!bodyEl || !styleEl) {
-        document.body.removeChild(iframe);
-        return;
-      }
-
       await renderAsync(blob, bodyEl, styleEl, {
         inWrapper: true,
-        hideWrapperOnPrint: false,
         breakPages: true,
         ignoreWidth: false,
         ignoreHeight: false,
+        ignoreLastRenderedPageBreak: false,
         useBase64URL: true,
+        renderHeaders: true,
+        renderFooters: true,
       });
 
-      await new Promise((r) => setTimeout(r, 350));
-      iframe.contentWindow.focus();
-      iframe.contentWindow.print();
+      const wrapper = bodyEl.querySelector(".docx-wrapper") as HTMLElement | null;
+      if (wrapper) {
+        wrapper.style.background = "#ffffff";
+        wrapper.style.padding = "0";
+      }
 
-      setTimeout(() => {
-        if (document.body.contains(iframe)) {
-          document.body.removeChild(iframe);
+      // Wait for fonts & embedded images
+      if ((document as any).fonts?.ready) {
+        await (document as any).fonts.ready;
+      }
+      const imgs = Array.from(bodyEl.querySelectorAll("img"));
+      await Promise.all(
+        imgs.map((img) =>
+          img.complete
+            ? Promise.resolve()
+            : new Promise<void>((res) => {
+                img.onload = () => res();
+                img.onerror = () => res();
+              })
+        )
+      );
+      await new Promise((r) => setTimeout(r, 200));
+
+      const pages = Array.from(bodyEl.querySelectorAll("section.docx")) as HTMLElement[];
+      const targets = pages.length > 0 ? pages : [bodyEl];
+
+      const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait", compress: true });
+      const pageW = pdf.internal.pageSize.getWidth();
+      const pageH = pdf.internal.pageSize.getHeight();
+
+      for (let i = 0; i < targets.length; i++) {
+        const el = targets[i];
+        el.style.boxShadow = "none";
+        el.style.margin = "0";
+        const canvas = await html2canvas(el, {
+          scale: 2,
+          backgroundColor: "#ffffff",
+          useCORS: true,
+          logging: false,
+        });
+        const imgData = canvas.toDataURL("image/jpeg", 0.92);
+        const ratio = canvas.height / canvas.width;
+        let w = pageW;
+        let h = pageW * ratio;
+        if (h > pageH) {
+          h = pageH;
+          w = pageH / ratio;
         }
-      }, 60000);
-    } catch (err: any) {
-      showStatus("កំហុសក្នុងការបង្កើត PDF៖ " + (err?.message || "Unknown error"), true);
+        if (i > 0) pdf.addPage();
+        pdf.addImage(imgData, "JPEG", (pageW - w) / 2, 0, w, h);
+      }
+
+      return pdf.output("blob");
+    } finally {
+      document.body.removeChild(host);
     }
   };
 
-  const handleGenerate = async (
-    target: "both" | "docx_kh" | "docx_en" | "pdf_kh" | "pdf_en" | "docx" | "pdf" = "both"
+  const dataUriToBytes = (url: string): Uint8Array => {
+    const b64 = url.split(",")[1] || "";
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+  };
+
+  const buildPdfZipAndDownload = async (
+    data: any,
+    files: { khUrl: string; khName: string; enUrl: string; enName: string }
   ) => {
+    const PizZip = (await import("pizzip")).default;
+    const zip = new PizZip();
+
+    const khPdfName = (data.pdf_filename_kh as string) || files.khName.replace(/\.docx$/i, ".pdf");
+    const enPdfName = (data.pdf_filename_en as string) || files.enName.replace(/\.docx$/i, ".pdf");
+
+    // Khmer PDF
+    if (data.pdf_base64_kh) {
+      zip.file(khPdfName, dataUriToBytes(data.pdf_base64_kh));
+    } else if (files.khUrl) {
+      const b = await renderDocxToPdfBlob(files.khUrl);
+      zip.file(khPdfName, new Uint8Array(await b.arrayBuffer()));
+    }
+
+    // English PDF
+    if (data.pdf_base64_en) {
+      zip.file(enPdfName, dataUriToBytes(data.pdf_base64_en));
+    } else if (files.enUrl) {
+      const b = await renderDocxToPdfBlob(files.enUrl);
+      zip.file(enPdfName, new Uint8Array(await b.arrayBuffer()));
+    }
+
+    const zipBlob = zip.generate({ type: "blob", mimeType: "application/zip" }) as Blob;
+    const zipName = khPdfName.replace(/_KH\.pdf$/i, "_KH_EN_PDF.zip").replace(/\.pdf$/i, "_PDF.zip");
+    const zipUrl = URL.createObjectURL(zipBlob);
+    triggerDownload(zipUrl, zipName, true);
+    setPdfZip((prev) => {
+      if (prev?.url) URL.revokeObjectURL(prev.url);
+      return { url: zipUrl, name: zipName };
+    });
+  };
+
+  const handleGenerate = async (target: "both" | "pdf" = "both") => {
     if (!nameKh.trim() || !idNumber.trim() || !phone.trim() || !addressFull.trim()) {
       showStatus("សូមបំពេញ ឈ្មោះខ្មែរ, លេខអត្តសញ្ញាណប័ណ្ណ, លេខទូរស័ព្ទ និង អាសយដ្ឋានពេញលេញ ជាមុនសិន។", true);
       return;
     }
-    const isPdfTarget = target === "pdf_kh" || target === "pdf_en" || target === "pdf";
-    const pdfLang = target === "pdf_en" ? "en" : "kh";
+    const isPdfTarget = target === "pdf";
 
     setGenerateLoading(true);
+    setGenerateStage(isPdfTarget ? "កំពុងបង្កើតកិច្ចសន្យា..." : "");
     try {
       const payload = {
         ...collectPayload(),
         need_pdf: isPdfTarget,
-        pdf_lang: pdfLang,
+        pdf_lang: "both",
       };
       const res = await fetch("/api/contracts/generate", {
         method: "POST",
@@ -702,44 +781,23 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
       };
       setGeneratedFiles(nextFiles);
 
-      showStatus(`បានបង្កើតកិច្ចសន្យាលេខ ${data.contract?.contract_no} និងរក្សាទុកភ្នាក់ងារ «${data.agent?.name_kh}» ដោយជោគជ័យ!`);
-
-      // Trigger requested download (single file per click so browser never blocks)
-      if (target === "both") {
+      if (isPdfTarget) {
+        setGenerateStage("កំពុងបម្លែងជា PDF (ខ្មែរ និង English)...");
+        await buildPdfZipAndDownload(data, nextFiles);
+        showStatus(`បានបង្កើត PDF កិច្ចសន្យាលេខ ${data.contract?.contract_no} (ខ្មែរ និង English) ក្នុងឯកសារ .zip ដោយជោគជ័យ!`);
+      } else {
         if (nextFiles.zipUrl) {
           triggerDownload(nextFiles.zipUrl, nextFiles.zipName, true);
         } else if (nextFiles.khUrl) {
           triggerDownload(nextFiles.khUrl, nextFiles.khName, true);
         }
-      } else if (target === "docx_kh" || target === "docx") {
-        if (nextFiles.khUrl) triggerDownload(nextFiles.khUrl, nextFiles.khName, true);
-      } else if (target === "docx_en") {
-        if (nextFiles.enUrl) triggerDownload(nextFiles.enUrl, nextFiles.enName, true);
-      } else if (target === "pdf_kh" || target === "pdf") {
-        const file = data.pdf_base64_kh || data.pdf_base64;
-        const name = data.pdf_filename_kh || data.pdf_filename || "contract_KH.pdf";
-        if (file) {
-          triggerDownload(file, name);
-        } else if (nextFiles.khUrl) {
-          await exportDocxAsPdfClient(nextFiles.khUrl, name.replace(/\.pdf$/i, ""));
-        } else {
-          showStatus("មិនអាចបង្កើតជា PDF បានទេ។", true);
-        }
-      } else if (target === "pdf_en") {
-        const file = data.pdf_base64_en;
-        const name = data.pdf_filename_en || "contract_EN.pdf";
-        if (file) {
-          triggerDownload(file, name);
-        } else if (nextFiles.enUrl) {
-          await exportDocxAsPdfClient(nextFiles.enUrl, name.replace(/\.pdf$/i, ""));
-        } else {
-          showStatus("មិនអាចបង្កើតជា PDF បានទេ។", true);
-        }
+        showStatus(`បានបង្កើតកិច្ចសន្យាលេខ ${data.contract?.contract_no} និងរក្សាទុកភ្នាក់ងារ «${data.agent?.name_kh}» ដោយជោគជ័យ!`);
       }
     } catch (err: any) {
-      showStatus("កំហុស៖ " + err.message, true);
+      showStatus("កំហុស៖ " + (err?.message || "Unknown error"), true);
     } finally {
       setGenerateLoading(false);
+      setGenerateStage("");
     }
   };
 
@@ -1700,26 +1758,18 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
                     onClick={() => handleGenerate("both")}
                   >
                     {generateLoading
-                      ? "កំពុងបង្កើតកិច្ចសន្យា..."
+                      ? generateStage || "កំពុងបង្កើតកិច្ចសន្យា..."
                       : "ទាញយកកិច្ចសន្យាទាំង(Download docx)"}
                   </button>
 
                   <div className="btn-row" style={{ marginTop: 0 }}>
                     <button
                       type="button"
-                      className="btn btn-docx"
+                      className="btn btn-pdf"
                       disabled={generateLoading}
-                      onClick={() => handleGenerate("docx_kh")}
+                      onClick={() => handleGenerate("pdf")}
                     >
-                      ទាញយក Word ខ្មែរ (.docx)
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-docx"
-                      disabled={generateLoading}
-                      onClick={() => handleGenerate("docx_en")}
-                    >
-                      Download English Word (.docx)
+                      បោះពុម្ភជា PDF
                     </button>
                     <button
                       type="button"
@@ -1728,25 +1778,6 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
                       onClick={handlePreview}
                     >
                       {previewLoading ? "កំពុងរៀបចំ..." : "មើលឡើងវិញ (Preview)"}
-                    </button>
-                  </div>
-
-                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end", marginTop: 4 }}>
-                    <button
-                      type="button"
-                      className="btn btn-pdf btn-sm"
-                      disabled={generateLoading}
-                      onClick={() => handleGenerate("pdf_kh")}
-                    >
-                      បោះពុម្ភជា PDF ខ្មែរ
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-pdf btn-sm"
-                      disabled={generateLoading}
-                      onClick={() => handleGenerate("pdf_en")}
-                    >
-                      Export English PDF
                     </button>
                   </div>
 
@@ -1775,54 +1806,17 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
                             download={generatedFiles.zipName}
                             className="btn btn-primary btn-sm"
                           >
-                            ទាញយកទាំង ២ (.zip)
+                            Word ទាំង ២ (.zip)
                           </a>
                         )}
-                        {generatedFiles.khUrl && (
+                        {pdfZip && (
                           <a
-                            href={generatedFiles.khUrl}
-                            download={generatedFiles.khName}
-                            className="btn btn-docx btn-sm"
-                          >
-                            Word ខ្មែរ (.docx)
-                          </a>
-                        )}
-                        {generatedFiles.enUrl && (
-                          <a
-                            href={generatedFiles.enUrl}
-                            download={generatedFiles.enName}
-                            className="btn btn-docx btn-sm"
-                          >
-                            English Word (.docx)
-                          </a>
-                        )}
-                        {generatedFiles.khUrl && (
-                          <button
-                            type="button"
+                            href={pdfZip.url}
+                            download={pdfZip.name}
                             className="btn btn-pdf btn-sm"
-                            onClick={() =>
-                              exportDocxAsPdfClient(
-                                generatedFiles.khUrl,
-                                generatedFiles.khName.replace(/\.docx$/i, "")
-                              )
-                            }
                           >
-                            PDF ខ្មែរ
-                          </button>
-                        )}
-                        {generatedFiles.enUrl && (
-                          <button
-                            type="button"
-                            className="btn btn-pdf btn-sm"
-                            onClick={() =>
-                              exportDocxAsPdfClient(
-                                generatedFiles.enUrl,
-                                generatedFiles.enName.replace(/\.docx$/i, "")
-                              )
-                            }
-                          >
-                            English PDF
-                          </button>
+                            PDF ទាំង ២ (.zip)
+                          </a>
                         )}
                       </div>
                     </div>
