@@ -21,12 +21,6 @@ Full-stack TypeScript / Next.js implementation of the Metfone Express Agent Cont
 
 In your Vercel Project Settings > **Environment Variables**, add:
 
-| Variable | Value |
-|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | `https://sfpwajhykrvrovwtzibu.supabase.co` |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNmcHdhamh5a3J2cm92d3R6aWJ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMyODE0NTQsImV4cCI6MjA5ODg1NzQ1NH0.is8kg09R2iVITmPg7fRwA9pPwPFTxBuk_zNqk2GUoz0` |
-| `SUPABASE_SERVICE_ROLE_KEY` | `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNmcHdhamh5a3J2cm92d3R6aWJ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMyODE0NTQsImV4cCI6MjA5ODg1NzQ1NH0.is8kg09R2iVITmPg7fRwA9pPwPFTxBuk_zNqk2GUoz0` |
-| `PDF_CONVERTER_URL` | *(Optional)* Endpoint to Gotenberg or external headless converter |
 
 ## 3. Local Development
 
