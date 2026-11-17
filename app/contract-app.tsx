@@ -955,11 +955,20 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
       setLoginUsername("");
       setLoginPassword("");
       showStatus(`សូមស្វាគមន៍ ${data.user?.displayName || data.user?.username}! លោកអ្នកអាចប្រើមុខងារទាំងអស់បានហើយ។`);
-      // Refresh protected history & user list
+      // Refresh protected history, agents & user list
       fetch("/api/contracts")
         .then((r) => (r.ok ? r.json() : []))
         .then((c) => {
           if (Array.isArray(c)) setRecentContracts(c);
+        })
+        .catch(() => {});
+      fetch("/api/agents")
+        .then((r) => (r.ok ? r.json() : []))
+        .then((ag) => {
+          if (Array.isArray(ag)) {
+            setAgents(ag);
+            setSearchedAgents(ag);
+          }
         })
         .catch(() => {});
       loadAuthUsers();
@@ -975,6 +984,8 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
     setCurrentUser(null);
     setAuthUsers([]);
     setRecentContracts([]);
+    setAgents([]);
+    setSearchedAgents([]);
     if (["branches", "agents", "history", "settings"].includes(activeTab)) {
       setActiveTab("home");
     }
@@ -1148,7 +1159,7 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
         {/* 2. CONTRACT FORM */}
         {activeTab === "form" && (
           <div>
-            {flowMode === "OLD" && (
+            {flowMode === "OLD" && currentUser && (
               <div className="card" style={{ borderLeft: "4px solid var(--primary)", marginBottom: 20 }}>
                 <div className="section-title">
                   <span>ស្វែងរកទិន្នន័យភ្នាក់ងារចាស់ (Search Existing Agent Database)</span>

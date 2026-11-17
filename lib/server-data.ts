@@ -68,8 +68,8 @@ export async function getInitData() {
     settings,
     tag_reference: tagReference,
     recent_contracts: sessionUser ? contracts : [],
-    agents: (agentsRes.data || []) as Agent[],
-    agents_count: (agentsRes.data || []).length,
+    agents: sessionUser ? ((agentsRes.data || []) as Agent[]) : [],
+    agents_count: sessionUser ? (agentsRes.data || []).length : 0,
     current_user: sessionUser,
   };
 }

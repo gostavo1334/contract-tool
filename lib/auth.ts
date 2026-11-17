@@ -102,8 +102,16 @@ export async function getOrInitAuthUsers(): Promise<StoredUser[]> {
     .eq("key", "auth_users")
     .maybeSingle();
 
-  if (data && Array.isArray(data.value) && data.value.length > 0) {
-    return data.value as StoredUser[];
+  let parsed: unknown = data?.value;
+  if (typeof parsed === "string") {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      parsed = null;
+    }
+  }
+  if (Array.isArray(parsed) && parsed.length > 0) {
+    return parsed as StoredUser[];
   }
 
   // Seed default admin account if none exists yet
@@ -111,7 +119,7 @@ export async function getOrInitAuthUsers(): Promise<StoredUser[]> {
     username: process.env.AUTH_ADMIN_USER || "admin",
     displayName: "Administrator",
     role: "admin",
-    passwordHash: hashPassword(process.env.AUTH_ADMIN_PASS || "admin123"),
+    passwordHash: hashPassword(process.env.AUTH_ADMIN_PASS || "Abcapple20191@"),
     createdAt: new Date().toISOString(),
   };
 

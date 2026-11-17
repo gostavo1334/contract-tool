@@ -4,6 +4,11 @@ import { toLatinDigits } from "@/lib/khmer";
 import { getSessionUser } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
+  const session = await getSessionUser();
+  if (!session) {
+    return NextResponse.json({ detail: "Unauthorized" }, { status: 401 });
+  }
+
   const { searchParams } = new URL(req.url);
   const q = (searchParams.get("q") || "").trim();
   const qNorm = toLatinDigits(q);
