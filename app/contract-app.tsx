@@ -1175,7 +1175,7 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
                 )}
               </>
             )}
-            <div style={{ marginLeft: 8, display: "flex", alignItems: "center", gap: 8 }}>
+            <div className="header-user-actions" style={{ marginLeft: 8, display: "flex", alignItems: "center", gap: 8 }}>
               {currentUser ? (
                 <>
                   <span className="badge badge-new" style={{ padding: "5px 10px" }}>
@@ -1254,7 +1254,7 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
                     onChange={(e) => handleLiveSearch(e.target.value)}
                   />
                 </div>
-                <div style={{ maxHeight: 220, overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: 8 }}>
+                <div style={{ maxHeight: 220, overflowY: "auto", overflowX: "auto", WebkitOverflowScrolling: "touch", border: "1px solid #e2e8f0", borderRadius: 8 }}>
                   <table>
                     <thead>
                       <tr>
@@ -2114,54 +2114,56 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
               </div>
             </div>
 
-            <table>
-              <thead>
-                <tr>
-                  <th>កូដ (code)</th>
-                  <th>ខេត្ត/រាជធានី (province_kh)</th>
-                  <th>នាយកសាខាខ្មែរ</th>
-                  <th>នាយកសាខាឡាតាំង</th>
-                  <th>body_name_format</th>
-                  <th>លេខកិច្ចសន្យាបន្ទាប់</th>
-                  <th>សកម្មភាព</th>
-                </tr>
-              </thead>
-              <tbody>
-                {branches.map((b) => (
-                  <tr key={b.code}>
-                    <td>
-                      <strong>{b.code}</strong>
-                    </td>
-                    <td>{b.province_kh}</td>
-                    <td>{b.director_kh || "(ទទេ)"}</td>
-                    <td>{b.director_latin}</td>
-                    <td>
-                      <span className={`badge ${b.body_name_format === "khmer" ? "badge-new" : "badge-old"}`}>
-                        {b.body_name_format}
-                      </span>
-                    </td>
-                    <td>
-                      <code>{b.next_contract_no}</code> (seq: {b.next_seq})
-                    </td>
-                    <td>
-                      <button
-                        className="btn btn-secondary btn-sm"
-                        onClick={() => {
-                          setBCode(b.code);
-                          setBProvKh(b.province_kh);
-                          setBDirKh(b.director_kh || "");
-                          setBDirLatin(b.director_latin);
-                          setBFormat(b.body_name_format);
-                          setBSeq(b.next_seq);
-                        }}
-                      >
-                        កែប្រែ
-                      </button>
-                    </td>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>កូដ (code)</th>
+                    <th>ខេត្ត/រាជធានី (province_kh)</th>
+                    <th>នាយកសាខាខ្មែរ</th>
+                    <th>នាយកសាខាឡាតាំង</th>
+                    <th>body_name_format</th>
+                    <th>លេខកិច្ចសន្យាបន្ទាប់</th>
+                    <th>សកម្មភាព</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {branches.map((b) => (
+                    <tr key={b.code}>
+                      <td>
+                        <strong>{b.code}</strong>
+                      </td>
+                      <td>{b.province_kh}</td>
+                      <td>{b.director_kh || "(ទទេ)"}</td>
+                      <td>{b.director_latin}</td>
+                      <td>
+                        <span className={`badge ${b.body_name_format === "khmer" ? "badge-new" : "badge-old"}`}>
+                          {b.body_name_format}
+                        </span>
+                      </td>
+                      <td>
+                        <code>{b.next_contract_no}</code> (seq: {b.next_seq})
+                      </td>
+                      <td>
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => {
+                            setBCode(b.code);
+                            setBProvKh(b.province_kh);
+                            setBDirKh(b.director_kh || "");
+                            setBDirLatin(b.director_latin);
+                            setBFormat(b.body_name_format);
+                            setBSeq(b.next_seq);
+                          }}
+                        >
+                          កែប្រែ
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
@@ -2339,7 +2341,7 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
             {/* Search & Table Card */}
             <div className="mini-card">
               <div style={{ display: "flex", gap: 12, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", marginBottom: 14 }}>
-                <div style={{ flex: 1, minWidth: 240 }}>
+                <div style={{ flex: 1, minWidth: "min(100%, 240px)" }}>
                   <input
                     type="text"
                     value={dbAgentSearch}
@@ -2452,52 +2454,54 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
             <div className="section-title">
               <span>ប្រវត្តិកិច្ចសន្យាដែលបានបង្កើត (Contracts History) {currentUser?.branchCode ? `— សាខា ${currentUser.branchCode}` : ""}</span>
             </div>
-            <table>
-              <thead>
-                <tr>
-                  <th>លេខកិច្ចសន្យា</th>
-                  <th>កាលបរិច្ឆេទ</th>
-                  <th>សាខា</th>
-                  <th>ភ្នាក់ងារ (ភាគី ខ)</th>
-                  <th>ទម្រង់</th>
-                  <th>ប្រាក់កក់ឧបករណ៍</th>
-                  <th>ឯកសារ</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentContracts.length === 0 ? (
+            <div className="table-wrap">
+              <table>
+                <thead>
                   <tr>
-                    <td colSpan={7} style={{ textAlign: "center", color: "var(--muted)" }}>
-                      មិនទាន់មានប្រវត្តិកិច្ចសន្យាទេ
-                    </td>
+                    <th>លេខកិច្ចសន្យា</th>
+                    <th>កាលបរិច្ឆេទ</th>
+                    <th>សាខា</th>
+                    <th>ភ្នាក់ងារ (ភាគី ខ)</th>
+                    <th>ទម្រង់</th>
+                    <th>ប្រាក់កក់ឧបករណ៍</th>
+                    <th>ឯកសារ</th>
                   </tr>
-                ) : (
-                  recentContracts.map((c) => (
-                    <tr key={c.id}>
-                      <td>
-                        <strong>{c.contract_no}</strong>
-                      </td>
-                      <td>{c.contract_date}</td>
-                      <td>{c.branch_code}</td>
-                      <td>
-                        {c.agent_name_kh} ({c.agent_name_latin})
-                      </td>
-                      <td>
-                        <span className={`badge ${c.template_type === "NEW" ? "badge-new" : "badge-old"}`}>
-                          {c.template_type}
-                        </span>
-                      </td>
-                      <td>${c.eq_deposit_total}</td>
-                      <td>
-                        {c.docx_path && (
-                          <span style={{ fontSize: "0.85rem", color: "#64748b" }}>{c.docx_path}</span>
-                        )}
+                </thead>
+                <tbody>
+                  {recentContracts.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} style={{ textAlign: "center", color: "var(--muted)" }}>
+                        មិនទាន់មានប្រវត្តិកិច្ចសន្យាទេ
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  ) : (
+                    recentContracts.map((c) => (
+                      <tr key={c.id}>
+                        <td>
+                          <strong>{c.contract_no}</strong>
+                        </td>
+                        <td>{c.contract_date}</td>
+                        <td>{c.branch_code}</td>
+                        <td>
+                          {c.agent_name_kh} ({c.agent_name_latin})
+                        </td>
+                        <td>
+                          <span className={`badge ${c.template_type === "NEW" ? "badge-new" : "badge-old"}`}>
+                            {c.template_type}
+                          </span>
+                        </td>
+                        <td>${c.eq_deposit_total}</td>
+                        <td>
+                          {c.docx_path && (
+                            <span style={{ fontSize: "0.85rem", color: "#64748b" }}>{c.docx_path}</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
@@ -2551,54 +2555,58 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
             <h3 className="section-title">
               បញ្ជី Tags ក្នុងគំរូទី ១៖ new_agreement_template.docx (ភ្នាក់ងារថ្មី)
             </h3>
-            <table>
-              <thead>
-                <tr>
-                  <th>ទីតាំងក្នុងឯកសារ</th>
-                  <th>Tag</th>
-                  <th>អត្ថបទគំរូដើមដែលត្រូវបានជំនួស</th>
-                  <th>ការពិពណ៌នា</th>
-                </tr>
-              </thead>
-              <tbody>
-                {initialData.tag_reference?.new_template?.map((item, idx) => (
-                  <tr key={idx}>
-                    <td>{item.location}</td>
-                    <td>
-                      <code>{item.tag}</code>
-                    </td>
-                    <td>{item.original_text}</td>
-                    <td>{item.description}</td>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ទីតាំងក្នុងឯកសារ</th>
+                    <th>Tag</th>
+                    <th>អត្ថបទគំរូដើមដែលត្រូវបានជំនួស</th>
+                    <th>ការពិពណ៌នា</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {initialData.tag_reference?.new_template?.map((item, idx) => (
+                    <tr key={idx}>
+                      <td>{item.location}</td>
+                      <td>
+                        <code>{item.tag}</code>
+                      </td>
+                      <td>{item.original_text}</td>
+                      <td>{item.description}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
 
             <h3 className="section-title" style={{ marginTop: 28 }}>
               បញ្ជី Tags ក្នុងគំរូទី ២៖ old_agreement_template.docx (ភ្នាក់ងារចាស់)
             </h3>
-            <table>
-              <thead>
-                <tr>
-                  <th>ទីតាំងក្នុងឯកសារ</th>
-                  <th>Tag</th>
-                  <th>អត្ថបទគំរូដើមដែលត្រូវបានជំនួស</th>
-                  <th>ការពិពណ៌នា</th>
-                </tr>
-              </thead>
-              <tbody>
-                {initialData.tag_reference?.old_template?.map((item, idx) => (
-                  <tr key={idx}>
-                    <td>{item.location}</td>
-                    <td>
-                      <code>{item.tag}</code>
-                    </td>
-                    <td>{item.original_text}</td>
-                    <td>{item.description}</td>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ទីតាំងក្នុងឯកសារ</th>
+                    <th>Tag</th>
+                    <th>អត្ថបទគំរូដើមដែលត្រូវបានជំនួស</th>
+                    <th>ការពិពណ៌នា</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {initialData.tag_reference?.old_template?.map((item, idx) => (
+                    <tr key={idx}>
+                      <td>{item.location}</td>
+                      <td>
+                        <code>{item.tag}</code>
+                      </td>
+                      <td>{item.original_text}</td>
+                      <td>{item.description}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
             <div style={{ marginTop: 28, paddingTop: 20, borderTop: "1px solid var(--border)" }}>
               <h3 className="section-title">
                 គ្រប់គ្រងគណនីអ្នកប្រើប្រាស់ (User Accounts)
