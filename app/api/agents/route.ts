@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { toLatinDigits } from "@/lib/khmer";
-import { getSessionUser } from "@/lib/auth";
+import { getSessionUser, resolveUserBranch } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
   const session = await getSessionUser();
@@ -9,11 +9,17 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ detail: "Unauthorized" }, { status: 401 });
   }
 
+  const userBranch = await resolveUserBranch(session);
+
   const { searchParams } = new URL(req.url);
   const q = (searchParams.get("q") || "").trim();
   const qNorm = toLatinDigits(q);
 
   let query = supabase.from("agents").select("*").order("id", { ascending: false });
+
+  if (userBranch) {
+    query = query.or(`branch_code.eq.${userBranch},agent_code.ilike.${userBranch}%`);
+  }
 
   if (q) {
     query = query.or(
@@ -21,7 +27,7 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const { data, error } = await query.limit(100);
+  const { data, error } = await query.limit(200);
   if (error) {
     return NextResponse.json({ detail: error.message }, { status: 400 });
   }
@@ -33,16 +39,19 @@ export async function POST(req: NextRequest) {
   if (!session) {
     return NextResponse.json({ detail: "Unauthorized" }, { status: 401 });
   }
+  const userBranch = await resolveUserBranch(session);
   try {
     const body = await req.json();
     const id = body.id ? parseInt(body.id, 10) : undefined;
+    const requestedBranch = (body.branch_code || "").trim().toUpperCase();
+    const targetBranch = userBranch || requestedBranch;
     const agentCode = (body.agent_code || body.contract_no || "").trim().toUpperCase();
     const idNumber = (body.id_number || "").trim();
     const phone = (body.phone || "").trim();
 
     const record: any = {
       agent_code: agentCode,
-      branch_code: (body.branch_code || "").trim().toUpperCase(),
+      branch_code: targetBranch,
       name_kh: (body.name_kh || "").trim(),
       name_latin: (body.name_latin || "").trim(),
       id_number: idNumber,
@@ -103,4 +112,51 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     return NextResponse.json({ detail: err.message }, { status: 400 });
   }
+}
+
+export async function DELETE(req: NextRequest) {
+  const session = await getSessionUser();
+  if (!session) {
+    return NextResponse.json({ detail: "Unauthorized" }, { status: 401 });
+  }
+  const userBranch = await resolveUserBranch(session);
+
+  const { searchParams } = new URL(req.url);
+  const idStr = searchParams.get("id");
+  if (!idStr) {
+    return NextResponse.json({ detail: "Missing agent ID" }, { status: 400 });
+  }
+  const id = parseInt(idStr, 10);
+  if (isNaN(id)) {
+    return NextResponse.json({ detail: "Invalid agent ID" }, { status: 400 });
+  }
+
+  // If user is branch-scoped, check that this agent belongs to their branch
+  if (userBranch) {
+    const { data: existingAgent } = await supabase
+      .from("agents")
+      .select("branch_code, agent_code")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (!existingAgent) {
+      return NextResponse.json({ detail: "រកមិនឃើញភ្នាក់ងារនេះទេ" }, { status: 404 });
+    }
+
+    const agBranch = (existingAgent.branch_code || "").toUpperCase();
+    const agCode = (existingAgent.agent_code || "").toUpperCase();
+    if (agBranch !== userBranch && !agCode.startsWith(userBranch)) {
+      return NextResponse.json(
+        { detail: "លោកអ្នកគ្មានសិទ្ធិលុបទិន្នន័យភ្នាក់ងាររបស់សាខាផ្សេងទេ" },
+        { status: 403 }
+      );
+    }
+  }
+
+  const { error } = await supabase.from("agents").delete().eq("id", id);
+  if (error) {
+    return NextResponse.json({ detail: error.message }, { status: 400 });
+  }
+
+  return NextResponse.json({ status: "ok", id });
 }

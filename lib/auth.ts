@@ -9,6 +9,7 @@ export interface SessionUser {
   username: string;
   displayName: string;
   role: "admin" | "staff";
+  branchCode?: string | null;
   exp: number;
 }
 
@@ -16,6 +17,7 @@ export interface StoredUser {
   username: string;
   displayName: string;
   role: "admin" | "staff";
+  branchCode?: string | null;
   passwordHash: string;
   createdAt: string;
 }
@@ -119,6 +121,7 @@ export async function getOrInitAuthUsers(): Promise<StoredUser[]> {
     username: process.env.AUTH_ADMIN_USER || "admin",
     displayName: "Administrator",
     role: "admin",
+    branchCode: null,
     passwordHash: hashPassword(process.env.AUTH_ADMIN_PASS || "Abcapple20191@"),
     createdAt: new Date().toISOString(),
   };
@@ -136,4 +139,24 @@ export async function saveAuthUsers(users: StoredUser[]): Promise<void> {
     key: "auth_users",
     value: users,
   });
+}
+
+export async function resolveUserBranch(user: { username: string; role: string; branchCode?: string | null }): Promise<string | null> {
+  if (user.branchCode && user.branchCode.trim()) {
+    return user.branchCode.trim().toUpperCase();
+  }
+  // If username matches a branch code (case-insensitive) e.g. "mona", "bat", "PNPA"
+  const clean = (user.username || "").trim().toUpperCase();
+  if (clean && clean !== "ADMIN" && clean !== (process.env.AUTH_ADMIN_USER || "admin").toUpperCase()) {
+    const { data: branch } = await supabase
+      .from("branches")
+      .select("code")
+      .eq("code", clean)
+      .maybeSingle();
+
+    if (branch && branch.code) {
+      return branch.code.toUpperCase();
+    }
+  }
+  return null;
 }

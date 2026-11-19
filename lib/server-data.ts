@@ -1,16 +1,26 @@
 import { supabase } from "@/lib/supabase";
-import { type Branch, type Agent, type ContractRecord, type Settings } from "@/lib/shared";
-import { getSessionUser } from "@/lib/auth";
+import { type Branch, type Agent, type ContractRecord, type Settings, agentBranchCode } from "@/lib/shared";
+import { getSessionUser, resolveUserBranch } from "@/lib/auth";
 import fs from "fs";
 import path from "path";
 
 export async function getInitData() {
   const sessionUser = await getSessionUser();
+  const userBranch = sessionUser ? await resolveUserBranch(sessionUser) : null;
+
+  let contractsQuery = supabase.from("contracts").select("*").order("id", { ascending: false });
+  let agentsQuery = supabase.from("agents").select("*").order("id", { ascending: false });
+
+  if (userBranch) {
+    contractsQuery = contractsQuery.eq("branch_code", userBranch);
+    agentsQuery = agentsQuery.or(`branch_code.eq.${userBranch},agent_code.ilike.${userBranch}%`);
+  }
+
   const [branchesRes, settingsRes, contractsRes, agentsRes] = await Promise.all([
     supabase.from("branches").select("*").order("code", { ascending: true }),
     supabase.from("settings").select("*"),
-    supabase.from("contracts").select("*").order("id", { ascending: false }).limit(25),
-    supabase.from("agents").select("*").order("id", { ascending: false }).limit(1000),
+    sessionUser ? contractsQuery.limit(50) : Promise.resolve({ data: [] }),
+    sessionUser ? agentsQuery.limit(1000) : Promise.resolve({ data: [] }),
   ]);
 
   // Load tag reference
@@ -62,14 +72,29 @@ export async function getInitData() {
     year: "numeric",
   }).format(new Date());
 
+  let visibleBranches = branches;
+  if (userBranch) {
+    visibleBranches = branches.filter((b) => b.code.toUpperCase() === userBranch);
+    if (visibleBranches.length === 0) {
+      visibleBranches = branches;
+    }
+  }
+
+  const effectiveUser = sessionUser
+    ? {
+        ...sessionUser,
+        branchCode: userBranch,
+      }
+    : null;
+
   return {
     today,
-    branches,
+    branches: visibleBranches,
     settings,
     tag_reference: tagReference,
     recent_contracts: sessionUser ? contracts : [],
     agents: sessionUser ? ((agentsRes.data || []) as Agent[]) : [],
     agents_count: sessionUser ? (agentsRes.data || []).length : 0,
-    current_user: sessionUser,
+    current_user: effectiveUser,
   };
 }

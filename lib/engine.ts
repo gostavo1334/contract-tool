@@ -15,6 +15,7 @@ import {
   stripTitle,
   type DigitStyle,
 } from "./khmer";
+import { composeEnglishAddress } from "./gazetteer";
 import {
   type Branch,
   type ContractFormPayload,
@@ -87,9 +88,9 @@ export function buildTemplateContext(
   const phoneFmt = formatDigitsByStyle(rawPhone, digitStyle);
   const bankNoFmt = formatDigitsByStyle(rawBankNo, digitStyle);
 
-  let addressFull = (payload.address_full || "").trim();
-  if (!addressFull) {
-    addressFull = composeKhmerAddress({
+  let addressKhmer = (payload.address_full || "").trim();
+  if (!addressKhmer) {
+    addressKhmer = composeKhmerAddress({
       house_no: payload.house_no,
       street: payload.street,
       village: payload.village,
@@ -98,6 +99,18 @@ export function buildTemplateContext(
       province: payload.province,
     });
   }
+
+  const addressEnglish = composeEnglishAddress({
+    house_no: payload.house_no,
+    street: payload.street,
+    village: payload.village,
+    commune: payload.commune,
+    district: payload.district,
+    province: payload.province,
+    address_full: payload.address_full,
+  });
+
+  const effectiveAddress = isEn ? addressEnglish : addressKhmer;
 
   const bankName = (payload.bank_name || "eMoney").trim();
   const bankAccountName = (payload.bank_account_name || agentNameLatin).trim();
@@ -115,10 +128,18 @@ export function buildTemplateContext(
     (eqPrinterBool ? 150 : 0) + (eqScaleBool ? 65 : 0) + (eqBasketBool ? 35 : 0);
   const eqDepositTotal = fixedDeposit + eqEquipmentTotal;
 
+  const companyAddressEn = payload.company_address
+    ? composeEnglishAddress({ address_full: payload.company_address })
+    : "";
+
   const companyCtx: Record<string, string> = {};
   for (const [key, defaultDots] of Object.entries(OLD_COMPANY_DOTS)) {
     const val = ((payload as any)[key] || "").trim();
-    companyCtx[key] = val || defaultDots;
+    if (key === "company_address" && isEn && val) {
+      companyCtx[key] = companyAddressEn || val;
+    } else {
+      companyCtx[key] = val || defaultDots;
+    }
   }
 
   const contractNo = (payload.agent_code || payload.contract_no || "").trim();
@@ -138,8 +159,8 @@ export function buildTemplateContext(
     id_number: idNumberFmt,
     phone: phoneFmt,
     email: email,
-    address: addressFull,
-    registration_address: addressFull,
+    address: effectiveAddress,
+    registration_address: effectiveAddress,
     bank_name: bankName,
     bank_account_name: bankAccountName,
     bank_account_no: bankNoFmt,
@@ -164,7 +185,7 @@ export function buildTemplateContext(
     eq_basket_bool: eqBasketBool,
     eq_deposit_total: eqDepositTotal,
     fixed_deposit: fixedDeposit,
-    address_full: addressFull,
+    address_full: effectiveAddress,
     context,
   };
 }

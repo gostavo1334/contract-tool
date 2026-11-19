@@ -4,11 +4,17 @@ import { supabase } from "@/lib/supabase";
 import { buildTemplateContext, renderDocxBuffer, convertDocxToPdf } from "@/lib/engine";
 import { ContractFormPayload, Branch } from "@/lib/shared";
 import { toLatinDigits } from "@/lib/khmer";
+import { getSessionUser, resolveUserBranch } from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
   try {
+    const session = await getSessionUser();
+    const userBranch = session ? await resolveUserBranch(session) : null;
     const body = await req.json();
     const payload: ContractFormPayload = body;
+    if (userBranch) {
+      payload.branch_code = userBranch;
+    }
     const needPdf = Boolean(body.need_pdf);
     const pdfLang: "kh" | "en" | "both" =
       body.pdf_lang === "kh" || body.pdf_lang === "en" ? body.pdf_lang : "both";

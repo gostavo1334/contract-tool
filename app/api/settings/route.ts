@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
-import { getSessionUser } from "@/lib/auth";
+import { getSessionUser, resolveUserBranch } from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
   const session = await getSessionUser();
   if (!session) {
     return NextResponse.json({ detail: "Unauthorized" }, { status: 401 });
+  }
+  const userBranch = await resolveUserBranch(session);
+  if (userBranch) {
+    return NextResponse.json({ detail: "Forbidden: Admin access only" }, { status: 403 });
   }
   try {
     const body = await req.json();

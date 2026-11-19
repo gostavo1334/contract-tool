@@ -3,13 +3,14 @@ import { supabase } from "@/lib/supabase";
 import Papa from "papaparse";
 import ExcelJS from "exceljs";
 import { toLatinDigits } from "@/lib/khmer";
-import { getSessionUser } from "@/lib/auth";
+import { getSessionUser, resolveUserBranch } from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
   const session = await getSessionUser();
   if (!session) {
     return NextResponse.json({ detail: "Unauthorized" }, { status: 401 });
   }
+  const userBranch = await resolveUserBranch(session);
   try {
     const formData = await req.formData();
     const file = formData.get("file") as File;
@@ -90,9 +91,10 @@ export async function POST(req: NextRequest) {
         const phoneNorm = toLatinDigits(mapped.phone || "");
         const agentCode = (mapped.agent_code || "").toUpperCase();
 
+        const targetBranch = userBranch || (mapped.branch_code || "").toUpperCase();
         const agentRecord: any = {
           agent_code: agentCode,
-          branch_code: (mapped.branch_code || "").toUpperCase(),
+          branch_code: targetBranch,
           name_kh: mapped.name_kh,
           name_latin: mapped.name_latin || "",
           id_number: mapped.id_number || "",
@@ -133,7 +135,11 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const { data: allAgents } = await supabase.from("agents").select("*").order("id", { ascending: false }).limit(100);
+    let agentQuery = supabase.from("agents").select("*").order("id", { ascending: false });
+    if (userBranch) {
+      agentQuery = agentQuery.or(`branch_code.eq.${userBranch},agent_code.ilike.${userBranch}%`);
+    }
+    const { data: allAgents } = await agentQuery.limit(100);
     return NextResponse.json({ imported: importedCount, agents: allAgents || [] });
   } catch (err: any) {
     return NextResponse.json({ detail: err.message }, { status: 500 });

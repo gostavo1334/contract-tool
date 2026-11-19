@@ -3,6 +3,7 @@ import {
   getOrInitAuthUsers,
   verifyPassword,
   signSession,
+  resolveUserBranch,
   SESSION_COOKIE_NAME,
 } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
@@ -29,13 +30,16 @@ export async function POST(req: NextRequest) {
       username: string;
       displayName: string;
       role: "admin" | "staff";
+      branchCode?: string | null;
     } | null = null;
 
     if (matched && verifyPassword(password, matched.passwordHash)) {
+      const branchCode = await resolveUserBranch(matched);
       sessionPayload = {
         username: matched.username,
         displayName: matched.displayName || matched.username,
         role: matched.role || "admin",
+        branchCode,
       };
     } else if (usernameInput.includes("@")) {
       // Fallback: also allow Supabase Auth email/password accounts if configured
@@ -48,6 +52,7 @@ export async function POST(req: NextRequest) {
           username: data.user.email || usernameInput,
           displayName: data.user.user_metadata?.full_name || data.user.email || usernameInput,
           role: "admin",
+          branchCode: null,
         };
       }
     }

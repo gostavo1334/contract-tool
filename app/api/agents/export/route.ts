@@ -1,13 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
-import { getSessionUser } from "@/lib/auth";
+import { getSessionUser, resolveUserBranch } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
   const session = await getSessionUser();
   if (!session) {
     return NextResponse.json({ detail: "Unauthorized" }, { status: 401 });
   }
-  const { data, error } = await supabase.from("agents").select("*").order("id", { ascending: false });
+  const userBranch = await resolveUserBranch(session);
+
+  let query = supabase.from("agents").select("*").order("id", { ascending: false });
+  if (userBranch) {
+    query = query.or(`branch_code.eq.${userBranch},agent_code.ilike.${userBranch}%`);
+  }
+  const { data, error } = await query;
   if (error) {
     return NextResponse.json({ detail: error.message }, { status: 400 });
   }

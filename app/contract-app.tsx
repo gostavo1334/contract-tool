@@ -25,6 +25,7 @@ interface AuthUser {
   username: string;
   displayName: string;
   role: "admin" | "staff";
+  branchCode?: string | null;
   createdAt?: string;
 }
 
@@ -36,7 +37,12 @@ interface InitialData {
   recent_contracts: ContractRecord[];
   agents: Agent[];
   agents_count: number;
-  current_user?: { username: string; displayName: string; role: string } | null;
+  current_user?: {
+    username: string;
+    displayName: string;
+    role: string;
+    branchCode?: string | null;
+  } | null;
 }
 
 export default function ContractApp({ initialData }: { initialData: InitialData }) {
@@ -50,6 +56,7 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
     username: string;
     displayName: string;
     role: string;
+    branchCode?: string | null;
   } | null>(initialData.current_user || null);
   const [loginModalOpen, setLoginModalOpen] = useState<boolean>(false);
   const [loginUsername, setLoginUsername] = useState<string>("");
@@ -62,7 +69,8 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
   const [newUserUsername, setNewUserUsername] = useState<string>("");
   const [newUserDisplayName, setNewUserDisplayName] = useState<string>("");
   const [newUserPassword, setNewUserPassword] = useState<string>("");
-  const [newUserRole, setNewUserRole] = useState<"admin" | "staff">("admin");
+  const [newUserRole, setNewUserRole] = useState<"admin" | "staff">("staff");
+  const [newUserBranchCode, setNewUserBranchCode] = useState<string>("");
 
   // State caches
   const [branches, setBranches] = useState<Branch[]>(initialData.branches || []);
@@ -146,6 +154,7 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
   const [agIdNo, setAgIdNo] = useState<string>("");
   const [agPhone, setAgPhone] = useState<string>("");
   const [agBankName, setAgBankName] = useState<string>("eMoney");
+  const [agBankAccName, setAgBankAccName] = useState<string>("");
   const [agBankNo, setAgBankNo] = useState<string>("");
   const [agAddr, setAgAddr] = useState<string>("");
   const [dbAgentSearch, setDbAgentSearch] = useState<string>("");
@@ -314,7 +323,7 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
     setContractNo(val);
     setPopupFilter(val);
     const det = detectBranchFromCode(val, branches);
-    if (det && det !== branchCode && branches.some((b) => b.code === det)) {
+    if (!currentUser?.branchCode && det && det !== branchCode && branches.some((b) => b.code === det)) {
       setBranchCode(det);
     }
     if (templateType === "OLD") {
@@ -387,7 +396,7 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
     if (agCodeVal) setContractNo(agCodeVal);
 
     const agBr = agentBranchCode(ag, branches);
-    if (agBr && branches.some((b) => b.code === agBr)) {
+    if (!currentUser?.branchCode && agBr && branches.some((b) => b.code === agBr)) {
       setBranchCode(agBr);
     }
 
@@ -457,10 +466,18 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
   const loadSamplePreset = (type: "NEW" | "OLD") => {
     openContractFlow(type);
     addressManuallyEdited.current = false;
+    const targetBr = currentUser?.branchCode || (type === "NEW" ? "MONA" : "PNPA");
+    setBranchCode(targetBr);
+    const currBrObj = branches.find((x) => x.code === targetBr);
+    const targetContractNo = currentUser?.branchCode
+      ? currBrObj?.next_contract_no || `${targetBr}001`
+      : type === "NEW"
+      ? "MONA011"
+      : "PNPA010";
+
     if (type === "NEW") {
-      setBranchCode("MONA");
       setContractDate("19/10/2026");
-      setContractNo("MONA011");
+      setContractNo(targetContractNo);
       setNameKh("ប៉ា ចំរើន");
       setNameLatin("Pa Chamroun");
       setIdNumber("230067812");
@@ -478,9 +495,8 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
       setEqScale(true);
       setEqBasket(false);
     } else {
-      setBranchCode("PNPA");
       setContractDate("01/05/2026");
-      setContractNo("PNPA010");
+      setContractNo(targetContractNo);
       setNameKh("ស៊ីម វិចិត្រ");
       setNameLatin("Sim Vichet");
       setIdNumber("110512075(01)");
@@ -866,6 +882,7 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
         id_number: agIdNo,
         phone: agPhone,
         bank_name: agBankName,
+        bank_account_name: agBankAccName || agNameLatin,
         bank_account_no: agBankNo,
         address_full: agAddr,
       }),
@@ -879,12 +896,51 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
       setAgNameLatin("");
       setAgIdNo("");
       setAgPhone("");
+      setAgBankName("eMoney");
+      setAgBankAccName("");
       setAgBankNo("");
       setAgAddr("");
       showStatus("បានរក្សាទុកភ្នាក់ងារដោយជោគជ័យ!");
     } else {
       const err = await res.json();
       showStatus(err.detail || "កំហុសក្នុងការរក្សាទុកភ្នាក់ងារ", true);
+    }
+  };
+
+  const handleDeleteAgent = async (ag: Agent) => {
+    if (!ag || !ag.id) return;
+    const identifier = ag.name_kh || ag.name_latin || ag.agent_code || `#${ag.id}`;
+    if (
+      !window.confirm(
+        `តើអ្នកពិតជាចង់លុបទិន្នន័យភ្នាក់ងារ «${identifier}» នេះមែនទេ?\n(Are you sure you want to delete this agent?)`
+      )
+    ) {
+      return;
+    }
+    try {
+      const res = await fetch(`/api/agents?id=${ag.id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) {
+        showStatus(data.detail || "មិនអាចលុបទិន្នន័យភ្នាក់ងារបានទេ", true);
+        return;
+      }
+      setAgents((prev) => prev.filter((a) => a.id !== ag.id));
+      setSearchedAgents((prev) => prev.filter((a) => a.id !== ag.id));
+      if (agEditId === ag.id) {
+        setAgEditId(null);
+        setAgCode("");
+        setAgNameKh("");
+        setAgNameLatin("");
+        setAgIdNo("");
+        setAgPhone("");
+        setAgBankName("eMoney");
+        setAgBankAccName("");
+        setAgBankNo("");
+        setAgAddr("");
+      }
+      showStatus(`បានលុបទិន្នន័យភ្នាក់ងារ «${identifier}» ដោយជោគជ័យ!`);
+    } catch (err: any) {
+      showStatus(err.message || "មិនអាចលុបទិន្នន័យភ្នាក់ងារបានទេ", true);
     }
   };
 
@@ -951,6 +1007,14 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
         return;
       }
       setCurrentUser(data.user);
+      if (data.user?.branchCode) {
+        setBranches((prev) => {
+          const match = prev.filter((b) => b.code.toUpperCase() === data.user.branchCode.toUpperCase());
+          return match.length > 0 ? match : prev;
+        });
+        setBranchCode(data.user.branchCode);
+        setAgBranch(data.user.branchCode);
+      }
       setLoginModalOpen(false);
       setLoginUsername("");
       setLoginPassword("");
@@ -971,7 +1035,9 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
           }
         })
         .catch(() => {});
-      loadAuthUsers();
+      if (!data.user?.branchCode) {
+        loadAuthUsers();
+      }
     } catch (err: any) {
       setLoginError(err?.message || "មានបញ្ហាក្នុងការចូលប្រព័ន្ធ");
     } finally {
@@ -986,6 +1052,12 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
     setRecentContracts([]);
     setAgents([]);
     setSearchedAgents([]);
+    fetch("/api/branches")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((b) => {
+        if (Array.isArray(b) && b.length > 0) setBranches(b);
+      })
+      .catch(() => {});
     if (["branches", "agents", "history", "settings"].includes(activeTab)) {
       setActiveTab("home");
     }
@@ -1002,6 +1074,7 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
         displayName: newUserDisplayName || newUserUsername,
         password: newUserPassword,
         role: newUserRole,
+        branchCode: newUserBranchCode || null,
       }),
     });
     const data = await res.json();
@@ -1013,6 +1086,7 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
     setNewUserUsername("");
     setNewUserDisplayName("");
     setNewUserPassword("");
+    setNewUserBranchCode("");
     showStatus("បានរក្សាទុកគណនីអ្នកប្រើប្រាស់ដោយជោគជ័យ!");
   };
 
@@ -1071,12 +1145,14 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
             </button>
             {currentUser && (
               <>
-                <button
-                  className={`nav-btn ${activeTab === "branches" ? "active" : ""}`}
-                  onClick={() => setActiveTab("branches")}
-                >
-                  សាខា (Branches)
-                </button>
+                {currentUser.role === "admin" && !currentUser.branchCode && (
+                  <button
+                    className={`nav-btn ${activeTab === "branches" ? "active" : ""}`}
+                    onClick={() => setActiveTab("branches")}
+                  >
+                    សាខា (Branches)
+                  </button>
+                )}
                 <button
                   className={`nav-btn ${activeTab === "agents" ? "active" : ""}`}
                   onClick={() => setActiveTab("agents")}
@@ -1089,12 +1165,14 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
                 >
                   ប្រវត្តិកិច្ចសន្យា
                 </button>
-                <button
-                  className={`nav-btn ${activeTab === "settings" ? "active" : ""}`}
-                  onClick={() => setActiveTab("settings")}
-                >
-                  ការកំណត់ &amp; Tags
-                </button>
+                {currentUser.role === "admin" && !currentUser.branchCode && (
+                  <button
+                    className={`nav-btn ${activeTab === "settings" ? "active" : ""}`}
+                    onClick={() => setActiveTab("settings")}
+                  >
+                    ការកំណត់ &amp; Tags
+                  </button>
+                )}
               </>
             )}
             <div style={{ marginLeft: 8, display: "flex", alignItems: "center", gap: 8 }}>
@@ -1102,6 +1180,7 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
                 <>
                   <span className="badge badge-new" style={{ padding: "5px 10px" }}>
                     {currentUser.displayName || currentUser.username}
+                    {currentUser.branchCode ? ` (${currentUser.branchCode})` : ""}
                   </span>
                   <button
                     type="button"
@@ -1208,13 +1287,23 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
                             <td>{ag.id_number}</td>
                             <td>{ag.phone}</td>
                             <td>{ag.address_full}</td>
-                            <td>
-                              <button
-                                className="btn btn-docx btn-sm"
-                                onClick={() => fillFormFromAgent(ag, true)}
-                              >
-                                ជ្រើសរើស
-                              </button>
+                            <td className="nowrap">
+                              <div style={{ display: "flex", gap: 6 }}>
+                                <button
+                                  className="btn btn-docx btn-sm"
+                                  onClick={() => fillFormFromAgent(ag, true)}
+                                >
+                                  ជ្រើសរើស
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-secondary btn-sm"
+                                  style={{ color: "#ef4444", borderColor: "#fca5a5" }}
+                                  onClick={() => handleDeleteAgent(ag)}
+                                >
+                                  លុប
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         ))
@@ -1318,6 +1407,7 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
                       value={branchCode}
                       onChange={(e) => onBranchChange(e.target.value)}
                       style={{ padding: "4px 8px", fontSize: "0.82rem", width: "auto" }}
+                      disabled={Boolean(currentUser?.branchCode)}
                     >
                       {branches.map((b) => (
                         <option key={b.code} value={b.code}>
@@ -1943,7 +2033,7 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
         )}
 
         {/* 3. BRANCHES ADMIN VIEW */}
-        {currentUser && activeTab === "branches" && (
+        {currentUser && !currentUser.branchCode && activeTab === "branches" && (
           <div className="card">
             <div className="section-title">
               <span>គ្រប់គ្រងតារាងសាខា (Branches Table — Admin)</span>
@@ -2081,7 +2171,7 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 18 }}>
               <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
                 <h2 style={{ fontSize: 22, fontWeight: 700, margin: 0, color: "#0f172a" }}>
-                  Agents Database
+                  Agents Database {currentUser?.branchCode ? `— សាខា ${currentUser.branchCode}` : ""}
                 </h2>
                 <span style={{ fontSize: 15, color: "#64748b", fontWeight: 500 }}>
                   ទិន្នន័យភ្នាក់ងារ និង ការនាំចូល
@@ -2113,7 +2203,11 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
                   <label>
                     សាខា (Branch) <span className="req">*</span>
                   </label>
-                  <select value={agBranch} onChange={(e) => setAgBranch(e.target.value)}>
+                  <select
+                    value={agBranch}
+                    onChange={(e) => setAgBranch(e.target.value)}
+                    disabled={Boolean(currentUser?.branchCode)}
+                  >
                     {branches.map((b) => (
                       <option key={b.code} value={b.code}>
                         {b.code} — {b.province_kh}
@@ -2149,7 +2243,13 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
                     type="text"
                     value={agNameLatin}
                     placeholder="ឧ. Pa Chamroun"
-                    onChange={(e) => setAgNameLatin(e.target.value)}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setAgNameLatin(v);
+                      if (!agBankAccName || agBankAccName === agNameLatin.toUpperCase()) {
+                        setAgBankAccName(v.toUpperCase());
+                      }
+                    }}
                   />
                 </div>
                 <div className="form-group">
@@ -2191,6 +2291,15 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
                     onChange={(e) => setAgBankNo(e.target.value)}
                   />
                 </div>
+                <div className="form-group">
+                  <label>ឈ្មោះម្ចាស់កុង (Bank Account Name)</label>
+                  <input
+                    type="text"
+                    value={agBankAccName}
+                    placeholder="ឧ. PA CHAMROUN"
+                    onChange={(e) => setAgBankAccName(e.target.value)}
+                  />
+                </div>
                 <div className="form-group" style={{ gridColumn: "1 / -1" }}>
                   <label>អាសយដ្ឋានពេញលេញ</label>
                   <input
@@ -2216,6 +2325,7 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
                       setAgIdNo("");
                       setAgPhone("");
                       setAgBankName("eMoney");
+                      setAgBankAccName("");
                       setAgBankNo("");
                       setAgAddr("");
                     }}
@@ -2300,6 +2410,7 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
                                   setAgIdNo(ag.id_number || "");
                                   setAgPhone(ag.phone || "");
                                   setAgBankName(ag.bank_name || "eMoney");
+                                  setAgBankAccName(ag.bank_account_name || ag.name_latin || "");
                                   setAgBankNo(ag.bank_account_no || "");
                                   setAgAddr(ag.address_full || "");
                                   window.scrollTo({ top: 0, behavior: "smooth" });
@@ -2316,6 +2427,14 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
                               >
                                 បោះពុម្ពទម្រង់ចាស់
                               </button>
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                style={{ color: "#ef4444", borderColor: "#fca5a5" }}
+                                onClick={() => handleDeleteAgent(ag)}
+                              >
+                                លុប (Delete)
+                              </button>
                             </div>
                           </td>
                         </tr>
@@ -2331,7 +2450,7 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
         {currentUser && activeTab === "history" && (
           <div className="card">
             <div className="section-title">
-              <span>ប្រវត្តិកិច្ចសន្យាដែលបានបង្កើត (Contracts History)</span>
+              <span>ប្រវត្តិកិច្ចសន្យាដែលបានបង្កើត (Contracts History) {currentUser?.branchCode ? `— សាខា ${currentUser.branchCode}` : ""}</span>
             </div>
             <table>
               <thead>
@@ -2383,7 +2502,7 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
         )}
 
         {/* 6. SETTINGS VIEW */}
-        {currentUser && activeTab === "settings" && (
+        {currentUser && !currentUser.branchCode && activeTab === "settings" && (
           <div className="card">
             <div className="section-title">
               <span>ការកំណត់ទម្រង់លេខ និង បញ្ជី Tags ក្នុងគំរូ Word (.docx)</span>
@@ -2501,9 +2620,22 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
                     type="text"
                     required
                     value={newUserUsername}
-                    placeholder="ឧ. admin ឬ staff1"
-                    onChange={(e) => setNewUserUsername(e.target.value)}
+                    placeholder="ឧ. MONA, BAT, staff1..."
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setNewUserUsername(val);
+                      const matched = branches.find((b) => b.code.toUpperCase() === val.trim().toUpperCase());
+                      if (matched) {
+                        setNewUserBranchCode(matched.code);
+                        if (!newUserDisplayName) {
+                          setNewUserDisplayName(`សាខា ${matched.code}`);
+                        }
+                      }
+                    }}
                   />
+                  <span className="hint" style={{ fontSize: "0.75rem", color: "#64748b" }}>
+                    បើប្រើឈ្មោះកូដសាខា (ឧ. MONA) គណនីនឹងត្រូវកំណត់ទៅសាខានោះដោយស្វ័យប្រវត្តិ
+                  </span>
                 </div>
                 <div className="form-group">
                   <label>ឈ្មោះបង្ហាញ (Display Name)</label>
@@ -2530,12 +2662,29 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
                   <select
                     value={newUserRole}
                     onChange={(e) =>
-                      setNewUserRole(e.target.value === "staff" ? "staff" : "admin")
+                      setNewUserRole(e.target.value === "admin" ? "admin" : "staff")
                     }
                   >
-                    <option value="admin">Admin</option>
-                    <option value="staff">Staff</option>
+                    <option value="staff">Staff (បុគ្គលិក)</option>
+                    <option value="admin">Admin (អ្នកគ្រប់គ្រង)</option>
                   </select>
+                </div>
+                <div className="form-group" style={{ gridColumn: "1 / span 2" }}>
+                  <label>កំណត់សាខា (Branch Scope)</label>
+                  <select
+                    value={newUserBranchCode}
+                    onChange={(e) => setNewUserBranchCode(e.target.value)}
+                  >
+                    <option value="">-- គ្រប់សាខា / All Branches (Superadmin) --</option>
+                    {branches.map((b) => (
+                      <option key={b.code} value={b.code}>
+                        {b.code} — {b.province_kh}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="hint" style={{ fontSize: "0.75rem", color: "#64748b" }}>
+                    បើជ្រើសរើសសាខា គណនីនេះនឹងអាចមើលឃើញ និងគ្រប់គ្រងតែទិន្នន័យសាខានោះប៉ុណ្ណោះ
+                  </span>
                 </div>
                 <div style={{ gridColumn: "1 / -1" }}>
                   <button type="submit" className="btn btn-primary btn-sm">
@@ -2551,30 +2700,41 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
                       <th>Username</th>
                       <th>Display Name</th>
                       <th>Role</th>
+                      <th>សាខា (Branch)</th>
                       <th>Action</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {authUsers.map((u) => (
-                      <tr key={u.username}>
-                        <td><strong>{u.username}</strong></td>
-                        <td>{u.displayName}</td>
-                        <td><span className="badge badge-new">{u.role}</span></td>
-                        <td className="nowrap">
-                          {currentUser && u.username.toLowerCase() !== currentUser.username.toLowerCase() ? (
-                            <button
-                              type="button"
-                              className="btn btn-secondary btn-sm"
-                              onClick={() => handleDeleteAuthUser(u.username)}
-                            >
-                              លុប (Delete)
-                            </button>
-                          ) : (
-                            <span style={{ fontSize: "0.82rem", color: "var(--muted)" }}>គណនីបច្ចុប្បន្ន</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
+                    {authUsers.map((u) => {
+                      const branchScope = u.branchCode || (branches.find((b) => b.code.toUpperCase() === u.username.toUpperCase())?.code);
+                      return (
+                        <tr key={u.username}>
+                          <td><strong>{u.username}</strong></td>
+                          <td>{u.displayName}</td>
+                          <td><span className="badge badge-new">{u.role}</span></td>
+                          <td>
+                            {branchScope ? (
+                              <span className="badge badge-old">សាខា {branchScope}</span>
+                            ) : (
+                              <span style={{ fontSize: "0.82rem", color: "var(--muted)" }}>គ្រប់សាខា (All)</span>
+                            )}
+                          </td>
+                          <td className="nowrap">
+                            {currentUser && u.username.toLowerCase() !== currentUser.username.toLowerCase() ? (
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => handleDeleteAuthUser(u.username)}
+                              >
+                                លុប (Delete)
+                              </button>
+                            ) : (
+                              <span style={{ fontSize: "0.82rem", color: "var(--muted)" }}>គណនីបច្ចុប្បន្ន</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

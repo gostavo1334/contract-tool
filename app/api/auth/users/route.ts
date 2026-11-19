@@ -4,6 +4,7 @@ import {
   getOrInitAuthUsers,
   saveAuthUsers,
   hashPassword,
+  resolveUserBranch,
 } from "@/lib/auth";
 
 export async function GET() {
@@ -11,12 +12,17 @@ export async function GET() {
   if (!session) {
     return NextResponse.json({ detail: "Unauthorized" }, { status: 401 });
   }
+  const userBranch = await resolveUserBranch(session);
+  if (userBranch) {
+    return NextResponse.json({ detail: "Forbidden: Admin access only" }, { status: 403 });
+  }
   const users = await getOrInitAuthUsers();
   return NextResponse.json({
     users: users.map((u) => ({
       username: u.username,
       displayName: u.displayName,
       role: u.role,
+      branchCode: u.branchCode || null,
       createdAt: u.createdAt,
     })),
   });
@@ -27,6 +33,10 @@ export async function POST(req: NextRequest) {
   if (!session) {
     return NextResponse.json({ detail: "Unauthorized" }, { status: 401 });
   }
+  const userBranch = await resolveUserBranch(session);
+  if (userBranch) {
+    return NextResponse.json({ detail: "Forbidden: Admin access only" }, { status: 403 });
+  }
 
   try {
     const body = await req.json();
@@ -34,6 +44,7 @@ export async function POST(req: NextRequest) {
     const displayName = (body.displayName || username).trim();
     const password = String(body.password || "");
     const role = body.role === "staff" ? "staff" : "admin";
+    const branchCode = (body.branchCode || "").trim().toUpperCase() || null;
 
     if (!username || !password || password.length < 4) {
       return NextResponse.json(
@@ -52,6 +63,7 @@ export async function POST(req: NextRequest) {
         ...users[idx],
         displayName,
         role,
+        branchCode,
         passwordHash: hashPassword(password),
       };
     } else {
@@ -59,6 +71,7 @@ export async function POST(req: NextRequest) {
         username,
         displayName,
         role,
+        branchCode,
         passwordHash: hashPassword(password),
         createdAt: new Date().toISOString(),
       });
@@ -71,6 +84,7 @@ export async function POST(req: NextRequest) {
         username: u.username,
         displayName: u.displayName,
         role: u.role,
+        branchCode: u.branchCode || null,
         createdAt: u.createdAt,
       })),
     });
@@ -83,6 +97,10 @@ export async function DELETE(req: NextRequest) {
   const session = await getSessionUser();
   if (!session) {
     return NextResponse.json({ detail: "Unauthorized" }, { status: 401 });
+  }
+  const userBranch = await resolveUserBranch(session);
+  if (userBranch) {
+    return NextResponse.json({ detail: "Forbidden: Admin access only" }, { status: 403 });
   }
 
   const { searchParams } = new URL(req.url);
@@ -115,6 +133,7 @@ export async function DELETE(req: NextRequest) {
       username: u.username,
       displayName: u.displayName,
       role: u.role,
+      branchCode: u.branchCode || null,
       createdAt: u.createdAt,
     })),
   });
