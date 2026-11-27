@@ -74,6 +74,17 @@ export function buildTemplateContext(
   const branchProvinceKh = branch.province_kh.trim();
   const branchProvinceEn = KHMER_TO_ENGLISH_PROVINCE[branchProvinceKh] || branchProvinceKh;
 
+  const rawTitle = (payload.agent_title || "").trim();
+  const agentTitleKh = rawTitle || "លោក";
+  const AGENT_TITLE_EN_MAP: Record<string, string> = {
+    "លោក": "Mr.",
+    "លោកស្រី": "Mrs.",
+    "អ្នកនាង": "Ms.",
+    "អ្នកស្រី": "Mrs.",
+    "កញ្ញា": "Ms.",
+  };
+  const agentTitleEn = AGENT_TITLE_EN_MAP[agentTitleKh] || "Mr.";
+
   let agentNameKh = stripTitle(payload.name_kh || "");
   let agentNameLatin = (payload.name_latin || "").trim();
   if (!agentNameLatin && agentNameKh) {
@@ -142,7 +153,7 @@ export function buildTemplateContext(
     }
   }
 
-  const contractNo = (payload.agent_code || payload.contract_no || "").trim();
+  const contractNo = (payload.agent_code || payload.contract_no || "").trim().toUpperCase();
 
   const context: Record<string, any> = {
     contract_no: contractNo,
@@ -154,6 +165,8 @@ export function buildTemplateContext(
     branch_province_kh: branchProvinceKh,
     branch_province_en: branchProvinceEn,
     director_latin: directorLatin,
+    agent_title_kh: agentTitleKh,
+    agent_title_en: agentTitleEn,
     agent_name_kh: agentNameKh,
     agent_name_latin: agentNameLatin,
     id_number: idNumberFmt,

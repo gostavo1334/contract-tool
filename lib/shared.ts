@@ -87,6 +87,7 @@ export interface ContractFormPayload {
   contract_date: string;
   digit_style?: "khmer" | "latin" | null;
   agent_id?: number | null;
+  agent_title?: string;
   name_kh: string;
   name_latin: string;
   id_number: string;

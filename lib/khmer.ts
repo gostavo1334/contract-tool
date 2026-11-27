@@ -240,7 +240,7 @@ function transliterateToken(token: string): string {
   return res ? res[0].toUpperCase() + res.slice(1) : "";
 }
 
-const NAME_TITLES = ["លោកស្រី", "អ្នកស្រី", "កញ្ញា", "លោក"];
+const NAME_TITLES = ["លោកស្រី", "អ្នកស្រី", "អ្នកនាង", "កញ្ញា", "លោក"];
 
 export function stripTitle(name: string): string {
   let cleaned = (name || "").trim();

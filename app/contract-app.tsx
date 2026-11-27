@@ -320,14 +320,15 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
   };
 
   const onContractNoChange = (val: string) => {
-    setContractNo(val);
-    setPopupFilter(val);
-    const det = detectBranchFromCode(val, branches);
+    const upper = val.toUpperCase();
+    setContractNo(upper);
+    setPopupFilter(upper);
+    const det = detectBranchFromCode(upper, branches);
     if (!currentUser?.branchCode && det && det !== branchCode && branches.some((b) => b.code === det)) {
       setBranchCode(det);
     }
     if (templateType === "OLD") {
-      const exact = agents.find((ag) => ag.agent_code?.toUpperCase() === val.trim().toUpperCase());
+      const exact = agents.find((ag) => ag.agent_code?.toUpperCase() === upper.trim());
       if (exact) {
         fillFormFromAgent(exact, false);
       }
@@ -392,7 +393,7 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
     addressManuallyEdited.current = Boolean(ag.address_full);
     setAgentId(ag.id || null);
 
-    const agCodeVal = (ag.agent_code || "").trim();
+    const agCodeVal = (ag.agent_code || "").trim().toUpperCase();
     if (agCodeVal) setContractNo(agCodeVal);
 
     const agBr = agentBranchCode(ag, branches);
@@ -431,6 +432,7 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
     bankAccountManuallyEdited.current = false;
     addressManuallyEdited.current = false;
     setAgentId(null);
+    setAgentTitle("លោក");
     setNameKh("");
     setNameLatin("");
     setIdNumber("");
@@ -519,15 +521,17 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
   };
 
   const collectPayload = (): ContractFormPayload => {
+    const normalizedContractNo = contractNo.trim().toUpperCase();
     return {
       template_type: templateType,
       lang: contractLang,
       branch_code: branchCode,
-      contract_no: contractNo,
-      agent_code: contractNo,
+      contract_no: normalizedContractNo,
+      agent_code: normalizedContractNo,
       contract_date: contractDate,
       digit_style: digitStyle,
       agent_id: agentId,
+      agent_title: agentTitle,
       name_kh: nameKh,
       name_latin: nameLatin,
       id_number: idNumber,
@@ -1385,6 +1389,7 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
                       value={contractNo}
                       onChange={(e) => onContractNoChange(e.target.value)}
                       placeholder="ឧ. PURA019"
+                      style={{ textTransform: "uppercase" }}
                     />
                   </div>
                   <div className="form-group">
@@ -2012,7 +2017,9 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
                         </div>
                         <div>
                           <strong>{isEn ? "Party B Name:" : "ភាគី ខ (ឈ្មោះ)៖"}</strong>{" "}
-                          {isEn ? ctx.agent_name_latin || ctx.agent_name_kh : `${ctx.agent_name_kh} (${ctx.agent_name_latin})`}
+                          {isEn
+                            ? `${ctx.agent_title_en ? `${ctx.agent_title_en} ` : ""}${ctx.agent_name_latin || ctx.agent_name_kh}`
+                            : `${ctx.agent_title_kh ? `${ctx.agent_title_kh} ` : ""}${ctx.agent_name_kh} (${ctx.agent_name_latin})`}
                           <br />
                           <strong>{isEn ? "ID / Phone:" : "អត្តសញ្ញាណប័ណ្ណ / ទូរស័ព្ទ៖"}</strong> {ctx.id_number} / {ctx.phone}
                           <br />
