@@ -15,11 +15,7 @@ import {
   KHMER_TO_ENGLISH_PROVINCE,
 } from "@/lib/shared";
 import { composeKhmerAddress } from "@/lib/khmer";
-import gazetteerDataRaw from "@/lib/gazetteer.json";
-import { GazetteerType, findMatchingItem } from "@/lib/gazetteer";
-
-const gazetteerData: GazetteerType = gazetteerDataRaw;
-const PROVINCES_LIST = Object.keys(gazetteerData);
+import AddressCascadePicker from "./address-picker";
 
 interface AuthUser {
   username: string;
@@ -234,21 +230,6 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
       province: nextProvince,
     });
   };
-
-  // Gazetteer address cascading
-  const matchedProvince = findMatchingItem(PROVINCES_LIST, province) || "";
-  const availableDistricts = matchedProvince
-    ? Object.keys(gazetteerData[matchedProvince]?.districts || {})
-    : [];
-  const matchedDistrict = findMatchingItem(availableDistricts, district) || "";
-  const availableCommunes = matchedProvince && matchedDistrict
-    ? Object.keys(gazetteerData[matchedProvince]?.districts?.[matchedDistrict]?.communes || {})
-    : [];
-  const matchedCommune = findMatchingItem(availableCommunes, commune) || "";
-  const availableVillages = matchedProvince && matchedDistrict && matchedCommune
-    ? (gazetteerData[matchedProvince]?.districts?.[matchedDistrict]?.communes?.[matchedCommune]?.villages || [])
-    : [];
-  const matchedVillage = findMatchingItem(availableVillages.map((v) => v.val), village) || "";
 
   const handleProvinceSelect = (newProv: string) => {
     setProvince(newProv);
@@ -1489,103 +1470,20 @@ export default function ContractApp({ initialData }: { initialData: InitialData 
             <div className="mini-card">
               <div className="mini-card-title">អាសយដ្ឋានទីលំនៅ</div>
               <div className="mini-card-body">
-                <div className="grid-3">
-                  <div className="form-group">
-                    <label>Province</label>
-                    <select
-                      value={matchedProvince}
-                      onChange={(e) => handleProvinceSelect(e.target.value)}
-                    >
-                      <option value="">-- ជ្រើសរើស Province --</option>
-                      {PROVINCES_LIST.map((p) => {
-                        const enName = gazetteerData[p]?.en || p;
-                        return (
-                          <option key={p} value={p}>
-                            {p} ({enName})
-                          </option>
-                        );
-                      })}
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label>District / Khan / Krong</label>
-                    <select
-                      value={matchedDistrict}
-                      disabled={!matchedProvince}
-                      onChange={(e) => handleDistrictSelect(e.target.value)}
-                    >
-                      <option value="">
-                        {matchedProvince ? "-- ជ្រើសរើស District --" : "-- សូមជ្រើសរើសខេត្តជាមុន --"}
-                      </option>
-                      {availableDistricts.map((d) => {
-                        const distEn = gazetteerData[matchedProvince]?.districts?.[d]?.en || d;
-                        return (
-                          <option key={d} value={d}>
-                            {d} ({distEn})
-                          </option>
-                        );
-                      })}
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label>Commune / Sangkat</label>
-                    <select
-                      value={matchedCommune}
-                      disabled={!matchedDistrict}
-                      onChange={(e) => handleCommuneSelect(e.target.value)}
-                    >
-                      <option value="">
-                        {matchedDistrict ? "-- ជ្រើសរើស Commune --" : "-- សូមជ្រើសរើសស្រុកជាមុន --"}
-                      </option>
-                      {availableCommunes.map((c) => {
-                        const comEn = gazetteerData[matchedProvince]?.districts?.[matchedDistrict]?.communes?.[c]?.en || c;
-                        return (
-                          <option key={c} value={c}>
-                            {c} ({comEn})
-                          </option>
-                        );
-                      })}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="grid-3" style={{ marginTop: 14 }}>
-                  <div className="form-group">
-                    <label>Village</label>
-                    <select
-                      value={matchedVillage}
-                      disabled={!matchedCommune}
-                      onChange={(e) => handleVillageSelect(e.target.value)}
-                    >
-                      <option value="">
-                        {matchedCommune ? "-- ជ្រើសរើស Village --" : "-- សូមជ្រើសរើសឃុំជាមុន --"}
-                      </option>
-                      {availableVillages.map((v) => (
-                        <option key={v.val} value={v.val}>
-                          {v.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label>House number (optional)</label>
-                    <input
-                      type="text"
-                      value={houseNo}
-                      placeholder="ឧ. 12"
-                      onChange={(e) => handleAddressPartChange("houseNo", e.target.value)}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Street (optional)</label>
-                    <input
-                      type="text"
-                      value={street}
-                      placeholder="ឧ. ៧៦"
-                      onChange={(e) => handleAddressPartChange("street", e.target.value)}
-                    />
-                  </div>
-                </div>
+                <AddressCascadePicker
+                  province={province}
+                  district={district}
+                  commune={commune}
+                  village={village}
+                  houseNo={houseNo}
+                  street={street}
+                  onSelectProvince={handleProvinceSelect}
+                  onSelectDistrict={handleDistrictSelect}
+                  onSelectCommune={handleCommuneSelect}
+                  onSelectVillage={handleVillageSelect}
+                  onHouseNoChange={(val) => handleAddressPartChange("houseNo", val)}
+                  onStreetChange={(val) => handleAddressPartChange("street", val)}
+                />
               </div>
             </div>
 
